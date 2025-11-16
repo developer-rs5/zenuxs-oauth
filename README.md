@@ -1,32 +1,32 @@
-# 🔐 Zenuxs OAuth – Lightweight OAuth 2.0 + PKCE Client
+# 🔐 Zenuxs OAuth – Lightweight OAuth 2.0 + PKCE Client (Updated for v1.0.8)
 
-A lightweight JavaScript OAuth 2.0 + PKCE client for integrating **Zenuxs Accounts** into browser apps, SPAs, and front-end applications.
+A lightweight OAuth 2.0 + PKCE client for integrating **Zenuxs Accounts** into browser apps and SPAs.
 
-This library provides:
-- OAuth 2.0 Authorization Code + PKCE flow  
-- Popup login support  
-- Automatic token refresh  
-- Token storage handling  
-- Built-in event listeners  
-- Clean authentication API  
-
-Only the **package features** are documented below.
+Supports:
+- OAuth 2.0 Authorization Code + PKCE  
+- Redirect Login  
+- Popup Login  
+- Auto Token Refresh  
+- Built-in Callback Handler (v1.0.8)  
+- Token Storage  
+- Event Emitters  
 
 ---
 
 # 🚀 Load the Library
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/zenuxs-oauth/dist/zenux-oauth.min.js"></script>
+<script src="https://unpkg.com/zenuxs-oauth@1.0.8/dist/zenux-oauth.min.js"></script>
 ```
 
 ---
 
-# 🧩 Creating a ZenuxOAuth Instance
+# 🧩 Create ZenuxOAuth Instance
 
 ```js
 const oauth = new ZenuxOAuth({
     clientId: "YOUR_CLIENT_ID",
+    authServer: "https://api.auth.zenuxs.in",
     redirectUri: "https://your-app.com/callback.html",
     scopes: "openid profile email",
     storage: "sessionStorage",
@@ -35,25 +35,21 @@ const oauth = new ZenuxOAuth({
 });
 ```
 
-### 🔍 What the package handles:
-- Builds PKCE challenge + verifier  
-- Manages OAuth URLs  
-- Token storage (access + refresh token)  
-- Automatic token refresh if enabled  
-- Logs internal events when `debug: true`  
+### Package handles:
+- PKCE generation  
+- OAuth URL building  
+- Token (access + refresh) storage  
+- Auto token refreshing  
+- State + security validation  
+- Debug logs  
 
 ---
 
-# 🔐 1. Login (Redirect Flow)
+# 🔐 1. Login (Redirect)
 
 ```js
 oauth.login();
 ```
-
-### Package does:
-- Generates PKCE  
-- Redirects user to Zenuxs login  
-- Stores temporary OAuth state  
 
 ---
 
@@ -63,27 +59,41 @@ oauth.login();
 const tokens = await oauth.login({ popup: true });
 ```
 
-### Package does:
-- Opens login page in a popup  
-- Waits for authorization code  
-- Exchanges code → tokens  
+Popup flow:
+- Opens Zenuxs login in popup  
+- Waits for auth code  
+- Exchanges tokens  
 - Returns tokens immediately  
-- No full-page reload  
+- No page reload  
 
 ---
 
-# 🔄 3. Handling OAuth Callback
+# 🧲 3. OAuth Callback Handler (NEW in v1.0.8)
 
-```js
-const tokens = await oauth.handleCallback();
+Add **callback.html**:
+
+```html
+<script src="https://unpkg.com/zenuxs-oauth@1.0.8/dist/zenux-oauth.min.js"></script>
+<script>
+    if (window.zenuxOAuthCallback) {
+        console.log("Callback auto-initialized");
+    } else {
+        window.zenuxOAuthCallback = new ZenuxOAuthCallbackHandler({
+            debug: true,
+            autoClose: true,
+            autoCloseDelay: 1000,
+            homeUrl: "/home.html",
+            storagePrefix: "zenux_oauth_",
+            successMessage: "Authentication successful! Redirecting...",
+            errorMessage: "Authentication failed."
+        });
+    }
+</script>
 ```
 
-### Package does:
-- Reads `?code=` from redirect  
-- Exchanges code for access + refresh tokens  
-- Validates state  
-- Saves tokens securely  
-- Clears login code from URL  
+Auto-handles when:
+- URL contains `code=`  
+- OR file contains `callback`  
 
 ---
 
@@ -93,11 +103,6 @@ const tokens = await oauth.handleCallback();
 const user = await oauth.getUserInfo();
 ```
 
-### Package does:
-- Calls `/userinfo` endpoint  
-- Automatically attaches access token  
-- Returns all claims from the server  
-
 ---
 
 # 🔓 5. Check Authentication
@@ -106,47 +111,30 @@ const user = await oauth.getUserInfo();
 oauth.isAuthenticated();
 ```
 
-### Package does:
-- Verifies token availability  
-- Verifies token expiry  
-
 ---
 
-# 📦 6. Read Full Session State
+# 📦 6. Read Session State
 
 ```js
 oauth.getSessionState();
 ```
 
-### Returns:
-```js
-{
-  tokens: { access_token, refresh_token },
-  expiresAt: 1730000000000,
-  user: {...}
-}
-```
-
 ---
 
-# 🔁 7. Refresh Access Tokens (Automatic & Manual)
+# 🔁 7. Refresh Token
 
 ### Manual:
 ```js
-await oauth.refresh();
+await oauth.refreshTokens();
 ```
 
 ### Automatic:
-Enabled when:
-
 ```js
 autoRefresh: true
 ```
 
-Package automatically:
-- Detects token expiry  
-- Uses refresh token  
-- Emits `tokenRefresh` event  
+Events fired:
+- `tokenRefresh`
 
 ---
 
@@ -156,48 +144,179 @@ Package automatically:
 await oauth.logout({ revokeTokens: false });
 ```
 
-### Package does:
-- Clears tokens  
-- Clears session state  
-- Optionally revokes tokens on server  
-
 ---
 
 # 📡 9. Event Listeners
 
 ```js
-oauth.on("error", (err) => {});
-oauth.on("tokenRefresh", (tokens) => {});
-oauth.on("stateChange", ({ event, data }) => {});
+oauth.on("error", err => {});
+oauth.on("tokenRefresh", tokens => {});
+oauth.on("stateChange", state => {});
 ```
 
-### Events emitted by the package:
+---
 
-| Event | Fired When |
-|-------|------------|
-| `error` | Any OAuth error occurs |
-| `tokenRefresh` | Access token refreshed |
-| `stateChange` | Login, logout, token change |
+# 🧪 Full Working Example (Updated for v1.0.8)
+
+## callback.html
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OAuth Callback</title>
+</head>
+<body>
+    <div id="zenux-oauth-callback-container"></div>
+
+    <script src="https://unpkg.com/zenuxs-oauth@1.0.8/dist/zenux-oauth.min.js"></script>
+    <script>
+        if (window.zenuxOAuthCallback) {
+            console.log("Callback handler initialized automatically");
+        } else {
+            window.zenuxOAuthCallback = new ZenuxOAuthCallbackHandler({
+                debug: true,
+                autoClose: true,
+                autoCloseDelay: 1000,
+                homeUrl: "/test.html",
+                storagePrefix: "zenux_oauth_",
+                successMessage: "Authentication successful! Redirecting...",
+                errorMessage: "Authentication failed. Please try again."
+            });
+        }
+    </script>
+</body>
+</html>
+```
 
 ---
 
-# 🧠 Summary of All Package Features
+## test.html (Test UI)
 
-| Feature | Provided by Package |
-|---------|---------------------|
-| PKCE Support | ✅ |
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ZenuxOAuth Test</title>
+</head>
+<body>
+    <h1>ZenuxOAuth Test</h1>
+
+    <h2>Initialize</h2>
+    <input type="text" id="clientId" placeholder="Client ID" value="5fa601a20c69ab01"><br>
+    <input type="text" id="authServer" placeholder="Auth Server" value="https://api.auth.zenuxs.in"><br>
+    <button onclick="init()">Initialize</button>
+
+    <hr>
+
+    <h2>Login</h2>
+    <button onclick="login()">Login (Redirect)</button>
+    <button onclick="loginPopup()">Login (Popup)</button>
+
+    <hr>
+
+    <h2>Tokens</h2>
+    <button onclick="getTokens()">Get Tokens</button>
+    <button onclick="refreshTokens()">Refresh Tokens</button>
+
+    <hr>
+
+    <h2>User</h2>
+    <button onclick="getUserInfo()">Get User Info</button>
+
+    <hr>
+
+    <h2>Logout</h2>
+    <button onclick="logout()">Logout</button>
+
+    <hr>
+
+    <h2>Output</h2>
+    <pre id="output"></pre>
+
+    <script src="https://unpkg.com/zenuxs-oauth@1.0.8/dist/zenux-oauth.min.js"></script>
+    <script>
+        let oauth = null;
+
+        function log(msg, data) {
+            document.getElementById('output').textContent =
+                msg + (data ? '\n' + JSON.stringify(data, null, 2) : '');
+        }
+
+        function init() {
+            oauth = new ZenuxOAuth({
+                clientId: document.getElementById('clientId').value,
+                authServer: document.getElementById('authServer').value,
+                redirectUri: window.location.origin + '/callback.html',
+                debug: true
+            });
+            log('Initialized');
+        }
+
+        function login() {
+            oauth.login();
+        }
+
+        async function loginPopup() {
+            try {
+                const tokens = await oauth.login({ popup: true });
+                log('Login success', tokens);
+            } catch (e) {
+                log('Error: ' + e.message);
+            }
+        }
+
+        function getTokens() {
+            log('Tokens', oauth.getTokens());
+        }
+
+        async function refreshTokens() {
+            try {
+                const tokens = await oauth.refreshTokens();
+                log('Refreshed', tokens);
+            } catch (e) {
+                log('Error: ' + e.message);
+            }
+        }
+
+        async function getUserInfo() {
+            try {
+                const info = await oauth.getUserInfo();
+                log('User Info', info);
+            } catch (e) {
+                log('Error: ' + e.message);
+            }
+        }
+
+        async function logout() {
+            await oauth.logout();
+            log('Logged out');
+        }
+    </script>
+</body>
+</html>
+```
+
+---
+
+# 🧠 Summary
+
+| Feature | Supported |
+|--------|-----------|
+| PKCE | ✅ |
+| Redirect Login | ✅ |
 | Popup Login | ✅ |
-| Redirect Flow | ✅ |
-| Automatic Token Refresh | ✅ |
+| Auto Token Refresh | ✅ |
+| Callback Handler | ✅ |
 | Token Storage | ✅ |
-| Session Management | ✅ |
-| User Info Fetcher | ✅ |
-| Event System | ✅ |
+| User Info | ✅ |
+| Event Emitters | ✅ |
 | State Validation | ✅ |
-| Token Expiry Handling | ✅ |
-| Logout + Optional Revoke | ✅ |
+| Logout | ✅ |
 
 ---
 
-# 📝 License  
 MIT © Zenuxs Team
