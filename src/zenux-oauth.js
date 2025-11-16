@@ -1094,48 +1094,48 @@ class ZenuxOAuth {
     }
 }
 
-// ==================== FACTORY & HELPERS ====================
+// // ==================== FACTORY & HELPERS ====================
 
-// Factory function for easier instantiation
-ZenuxOAuth.create = function (config) {
-    return new ZenuxOAuth(config);
-};
+// // Factory function for easier instantiation
+// ZenuxOAuth.create = function (config) {
+//     return new ZenuxOAuth(config);
+// };
 
-// Singleton pattern helper
-ZenuxOAuth.instance = null;
-ZenuxOAuth.getInstance = function (config) {
-    if (!ZenuxOAuth.instance) {
-        ZenuxOAuth.instance = new ZenuxOAuth(config);
-    }
-    return ZenuxOAuth.instance;
-};
+// // Singleton pattern helper
+// ZenuxOAuth.instance = null;
+// ZenuxOAuth.getInstance = function (config) {
+//     if (!ZenuxOAuth.instance) {
+//         ZenuxOAuth.instance = new ZenuxOAuth(config);
+//     }
+//     return ZenuxOAuth.instance;
+// };
 
-ZenuxOAuth.destroyInstance = function () {
-    if (ZenuxOAuth.instance) {
-        ZenuxOAuth.instance.destroy();
-        ZenuxOAuth.instance = null;
-    }
-};
+// ZenuxOAuth.destroyInstance = function () {
+//     if (ZenuxOAuth.instance) {
+//         ZenuxOAuth.instance.destroy();
+//         ZenuxOAuth.instance = null;
+//     }
+// };
 
-// Export error class
-ZenuxOAuth.Error = ZenuxOAuthError;
+// // Export error class
+// ZenuxOAuth.Error = ZenuxOAuthError;
 
-// Version
-ZenuxOAuth.VERSION = '2.0.0';
+// // Version
+// ZenuxOAuth.VERSION = '2.0.0';
 
-// ==================== UMD EXPORT ====================
+// // ==================== UMD EXPORT ====================
 
-(function (global, factory) {
-    if (typeof define === 'function' && define.amd) {
-        define([], factory);
-    } else if (typeof module !== 'undefined' && module.exports) {
-        module.exports = factory();
-    } else {
-        global.ZenuxOAuth = factory();
-    }
-}(typeof window !== 'undefined' ? window : this, function () {
-    return ZenuxOAuth;
-}));
+// (function (global, factory) {
+//     if (typeof define === 'function' && define.amd) {
+//         define([], factory);
+//     } else if (typeof module !== 'undefined' && module.exports) {
+//         module.exports = factory();
+//     } else {
+//         global.ZenuxOAuth = factory();
+//     }
+// }(typeof window !== 'undefined' ? window : this, function () {
+//     return ZenuxOAuth;
+// }));
 
 
 // ==================== CALLBACK HANDLER ====================
