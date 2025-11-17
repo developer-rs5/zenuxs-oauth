@@ -1,7 +1,7 @@
 # 🔐 Zenuxs OAuth – Lightweight OAuth 2.0 + PKCE Client (Updated for v1.0.8)
 
 A lightweight OAuth 2.0 + PKCE client for integrating **Zenuxs Accounts** into browser apps and SPAs.
-
+          
 Supports:
 - OAuth 2.0 Authorization Code + PKCE  
 - Redirect Login  
