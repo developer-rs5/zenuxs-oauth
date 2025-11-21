@@ -268,28 +268,30 @@ class ZenuxOAuth {
     }
 
     async sha256(plain) {
-        if (Environment.isNode) {
-            const crypto = require('crypto');
-            const hash = crypto.createHash('sha256').update(plain).digest('base64');
-            return hash.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-        }
-
-        if (typeof crypto !== 'undefined' && crypto.subtle) {
-            const encoder = new TextEncoder();
-            const data = encoder.encode(plain);
-            const hash = await crypto.subtle.digest('SHA-256', data);
-            return btoa(String.fromCharCode(...new Uint8Array(hash)))
-                .replace(/\+/g, '-')
-                .replace(/\//g, '_')
-                .replace(/=/g, '');
-        }
-
-        throw new ZenuxOAuthError(
-            'SHA-256 not supported in this environment',
-            'CRYPTO_NOT_SUPPORTED',
-            { environment: Environment.getEnvironment() }
-        );
+    // Browser environment - use Web Crypto API
+    if (typeof crypto !== 'undefined' && crypto.subtle) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(plain);
+        const hash = await crypto.subtle.digest('SHA-256', data);
+        return btoa(String.fromCharCode(...new Uint8Array(hash)))
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=/g, '');
     }
+    
+    // Node.js environment - use dynamic import to avoid bundling issues
+    if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+        // Use dynamic import to prevent Vite from trying to bundle crypto
+        const crypto = await import('crypto');
+        const hash = crypto.createHash('sha256').update(plain).digest('base64');
+        return hash.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    }
+
+    throw new ZenuxOAuthError(
+        'SHA-256 not supported in this environment',
+        'CRYPTO_NOT_SUPPORTED'
+    );
+}
 
     async login(options = {}) {
         try {
