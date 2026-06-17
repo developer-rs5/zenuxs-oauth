@@ -73,16 +73,16 @@
   </main>
 <button id="exportLogs" style="margin-top: 12px;">📥 Export Debug Logs</button>
 
-  <script src="./dist/zenux-oauth.js"></script>
+  <script src="../dist/zenux-oauth.min.js"></script>
   <script>
     const log = document.getElementById('log');
 
     const oauth = new ZenuxOAuth({
       clientId: 'da19b9681f660014',
-      theme: 'dark',
-      uiFallbackMode: 'popup',
-      uiCloseConfirm: true,
-      debug: true
+      // theme: 'dark',
+      // uiFallbackMode: 'popup',
+      // uiCloseConfirm: true,
+      // debug: true
     });
 
    document.getElementById('exportLogs')?.addEventListener('click', () => {
@@ -128,7 +128,7 @@
 
     document.getElementById('login').addEventListener('click', async () => {
       await oauth.login({
-        mode: 'popup',
+        mode: 'ui',
       });
     });
   </script>

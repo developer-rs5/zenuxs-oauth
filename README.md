@@ -399,6 +399,42 @@ Serve the browser examples over `http://` or `https://`, not `file://`.
 - `popup` and `ui` both support automatic callback completion
 - For direct Google, Discord, or GitHub login, popup mode is usually the safest UX
 
+## Social API Wrappers
+
+The SDK provides helper methods for interacting with users' connected social accounts (Twitter/X, LinkedIn, YouTube, Facebook, Instagram, etc.).
+
+```js
+const oauth = new ZenuxOAuth({ clientId: 'your-client-id' });
+await oauth.login();
+
+// Access social providers
+const x = oauth.x();
+
+// Listen to events on this specific provider
+x.on('post_created', (event) => {
+    console.log(`Successfully created a post on ${event.provider}!`, event.data);
+});
+
+// Get user data from provider
+const userData = await x.getData();
+
+// Get posts
+const posts = await x.getPost();
+
+// Create a post
+await x.createPost({ message: 'Hello from Zenuxs API!' });
+
+// Get analytics
+const analytics = await x.analytics();
+```
+
+### Supported Providers
+- `oauth.x()` or `oauth.twitter()`
+- `oauth.linkedin()`
+- `oauth.youtube()`
+- `oauth.facebook()`
+- `oauth.instagram()`
+
 ## License
 
 MIT

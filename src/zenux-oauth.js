@@ -1811,6 +1811,19 @@ class ZenuxOAuth {
         let redirectFallbackTimer = null;
         let iframeResourceCursor = this.getIframeResourceSnapshot(0).cursor;
         let preferredFallbackUrl = authData.url;
+        let flowReject = null;
+        let flowResolve = null;
+
+        const isRedirectUri = (url) => {
+            if (!url) return false;
+            try {
+                const parsedUrl = new URL(url);
+                const parsedRedirect = new URL(this.resolveRedirectUri(options));
+                return parsedUrl.origin === parsedRedirect.origin && parsedUrl.pathname === parsedRedirect.pathname;
+            } catch {
+                return false;
+            }
+        };
 
         const overlay = document.createElement('div');
         const styleElement = document.createElement('style');
@@ -1837,15 +1850,56 @@ class ZenuxOAuth {
             if (event.data?.type === 'zenux:navigate' && event.data.url) {
                 _resolvedFrameUrl = event.data.url;
                 this._addDebugEntry('ui-nav', `postMessage URL update: ${_resolvedFrameUrl}`);
+                
+                // Intercept and handle callback directly in parent to bypass Chromium Private Network Access (PNA) blocks
+                if (!callbackStarted && (_resolvedFrameUrl.includes('?code=') || _resolvedFrameUrl.includes('&code=') || _resolvedFrameUrl.includes('?error='))) {
+                    this._addDebugEntry('ui-load', 'Callback detected via postMessage, processing in parent to bypass PNA block');
+                    callbackStarted = true;
+                    if (redirectFallbackTimer) {
+                        clearTimeout(redirectFallbackTimer);
+                        redirectFallbackTimer = null;
+                    }
+                    if (initialRevealTimer) {
+                        clearTimeout(initialRevealTimer);
+                        initialRevealTimer = null;
+                    }
+                    
+                    if (loadingLayer && sheet) {
+                        loadingLayer.classList.toggle('is-visible', true);
+                        sheet.classList.toggle('zo-processing', true);
+                        if (loadingTitle) loadingTitle.textContent = 'Finishing sign in';
+                        if (loadingText) loadingText.textContent = 'Securing your session...';
+                    }
+                    
+                    if (confirmBar) confirmBar.classList.remove('is-visible');
+
+                    this.handleCallback(_resolvedFrameUrl, { ...options, notifyParent: false })
+                        .then((tokens) => {
+                            if (flowResolve) flowResolve(tokens);
+                        })
+                        .catch((err) => {
+                            if (flowReject) flowReject(err);
+                        });
+                }
             }
         };
         window.addEventListener('message', _onFrameMessage);
 
         const getObservedUrl = () => {
+            try {
+                if (frame && frame.contentWindow && frame.contentWindow.location && frame.contentWindow.location.href) {
+                    return frame.contentWindow.location.href;
+                }
+            } catch (e) { /* cross-origin */ }
+
+            if (_resolvedFrameUrl && _resolvedFrameUrl !== 'about:blank') {
+                return _resolvedFrameUrl;
+            }
+
             if (frame && frame.src && frame.src !== 'about:blank') {
                 return frame.src;
             }
-            return _resolvedFrameUrl;
+            return authData.url;
         };
 
 
@@ -2042,6 +2096,7 @@ class ZenuxOAuth {
         frameWrap.className = 'zo-ui-frame-wrap';
         frame.className = 'zo-ui-frame';
         frame.title = 'Zenux OAuth Login';
+        frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-top-navigation');
         frame.src = authData.url;
         loadingLayer.className = 'zo-ui-loading is-visible';
         confirmBar.className = 'zo-ui-confirm';
@@ -2115,8 +2170,8 @@ class ZenuxOAuth {
             const isZenuxsUrl = (url) => url && (url.includes('zenuxs.in') || url.includes(authServerHost));
 
             const observedUrl = getObservedUrl();
-            if (isZenuxsUrl(observedUrl)) {
-                this._addDebugEntry('ui-fallback', `aborted, still Zenuxs: ${observedUrl}`);
+            if (isZenuxsUrl(observedUrl) || isRedirectUri(observedUrl)) {
+                this._addDebugEntry('ui-fallback', `aborted, still Zenuxs or redirect URI: ${observedUrl}`);
                 return;
             }
 
@@ -2125,8 +2180,8 @@ class ZenuxOAuth {
                 redirectFallbackTimer = null;
                 if (callbackStarted || fallbackTriggered) return;
                 const finalUrl = getObservedUrl();
-                if (isZenuxsUrl(finalUrl)) {
-                    this._addDebugEntry('ui-fallback', `timer fired but still Zenuxs: ${finalUrl}`);
+                if (isZenuxsUrl(finalUrl) || isRedirectUri(finalUrl)) {
+                    this._addDebugEntry('ui-fallback', `timer fired but still Zenuxs or redirect URI: ${finalUrl}`);
                     return;
                 }
                 setLoadingState(true, 'Continuing sign in', 'Opening this step in a safer window...');
@@ -2261,7 +2316,7 @@ class ZenuxOAuth {
             }
 
             // 4. External domain
-            if (!callbackStarted && !fallbackTriggered) {
+            if (!callbackStarted && !fallbackTriggered && !isRedirectUri(observedUrl)) {
                 this._addDebugEntry('ui-load', `External domain, scheduling fallback: ${observedUrl}`);
                 scheduleRedirectFallback('provider_redirect_stalled', 'Continuing sign in', 'Please wait while the provider redirects...');
             }
@@ -2278,7 +2333,9 @@ class ZenuxOAuth {
         });
 
         const previousOverflow = document.body.style.overflow;
-        document.body.style.overflow = 'hidden';
+        const previousHtmlOverflow = document.documentElement.style.overflow;
+        document.body.style.setProperty('overflow', 'hidden', 'important');
+        document.documentElement.style.setProperty('overflow', 'hidden', 'important');
         document.body.appendChild(overlay);
         this._activeUi = overlay;
 
@@ -2290,6 +2347,8 @@ class ZenuxOAuth {
             type: 'ui',
             timeout: Number.isFinite(Number(options.timeout)) ? Number(options.timeout) : 300000,
             checkClosed: () => !!(popupHandle && popupHandle.closed && fallbackTriggered),
+            attachCancel: (rejectFn) => { flowReject = rejectFn; },
+            attachResolve: (resolveFn) => { flowResolve = resolveFn; },
             cleanup: () => {
                 clearRedirectFallbackTimer();
                 if (initialRevealTimer) {
@@ -2297,6 +2356,7 @@ class ZenuxOAuth {
                     initialRevealTimer = null;
                 }
                 document.body.style.overflow = previousOverflow;
+                document.documentElement.style.overflow = previousHtmlOverflow;
                 overlay.classList.remove('zo-open');
                 setTimeout(() => {
                     if (overlay.parentNode) {
@@ -2419,7 +2479,36 @@ class ZenuxOAuth {
                     return;
                 }
 
-                if (event.origin && event.origin !== 'null' && event.origin !== window.location.origin) {
+                // Allow messages from the same origin, or from the redirectUri origin, or localhost/127.0.0.1 aliases
+                let isAllowedOrigin = false;
+                if (!event.origin || event.origin === 'null') {
+                    isAllowedOrigin = true;
+                } else if (event.origin === window.location.origin) {
+                    isAllowedOrigin = true;
+                } else {
+                    try {
+                        const redirectUri = this.resolveRedirectUri(options);
+                        if (redirectUri && event.origin === new URL(redirectUri).origin) {
+                            isAllowedOrigin = true;
+                        }
+                    } catch (e) { /* ignore */ }
+
+                    // Also allow localhost <-> 127.0.0.1 origin matching if port matches
+                    if (!isAllowedOrigin) {
+                        try {
+                            const eventUrl = new URL(event.origin);
+                            const localUrl = new URL(window.location.origin);
+                            const eventHost = eventUrl.hostname;
+                            const localHost = localUrl.hostname;
+                            const isLocalhostAlias = (h) => h === 'localhost' || h === '127.0.0.1';
+                            if (isLocalhostAlias(eventHost) && isLocalhostAlias(localHost) && eventUrl.port === localUrl.port) {
+                                isAllowedOrigin = true;
+                            }
+                        } catch (e) { /* ignore */ }
+                    }
+                }
+
+                if (!isAllowedOrigin) {
                     return;
                 }
 
@@ -2456,6 +2545,10 @@ class ZenuxOAuth {
 
             if (typeof flowOptions.attachCancel === 'function') {
                 flowOptions.attachCancel(rejectOnce);
+            }
+
+            if (typeof flowOptions.attachResolve === 'function') {
+                flowOptions.attachResolve(resolveOnce);
             }
 
             if (typeof flowOptions.checkClosed === 'function') {
@@ -2886,6 +2979,110 @@ class ZenuxOAuth {
         };
     }
 
+    async _fetchSocial(provider, path, options = {}) {
+        const authFetch = await this.getAuthenticatedFetch();
+        const res = await authFetch(`${this.config.authServer}/social/${provider}${path}`, options);
+        if (!res.ok) {
+            let text;
+            try { text = await res.text(); } catch(e) { text = res.statusText; }
+            throw new ZenuxOAuthError(`Social API Error: ${text}`, 'SOCIAL_API_ERROR', { status: res.status });
+        }
+        return res.json();
+    }
+
+    _createProvider(providerName, methods) {
+        const listeners = {};
+        const on = (event, fn) => {
+            if (!listeners[event]) listeners[event] = [];
+            listeners[event].push(fn);
+        };
+        const emit = (event, data) => {
+            if (listeners[event]) {
+                listeners[event].forEach(fn => fn(data));
+            }
+        };
+
+        const providerObj = { on };
+
+        for (const methodName in methods) {
+            providerObj[methodName] = async (...args) => {
+                const config = methods[methodName];
+                const res = await config.exec(...args);
+                emit(config.event, { provider: providerName, data: res });
+                return res;
+            };
+        }
+
+        return providerObj;
+    }
+
+    discord() {
+        return this._createProvider('discord', {
+            getProfile: { event: 'profile_fetched', exec: () => this._fetchSocial('discord', '/profile') },
+            getGuilds: { event: 'guilds_fetched', exec: () => this._fetchSocial('discord', '/guilds') },
+            sendMessage: { event: 'message_sent', exec: (channelId, message) => this._fetchSocial('discord', '/message', { method: 'POST', body: JSON.stringify({ channelId, message }) }) }
+        });
+    }
+
+    github() {
+        return this._createProvider('github', {
+            getProfile: { event: 'profile_fetched', exec: () => this._fetchSocial('github', '/profile') },
+            getRepos: { event: 'repos_fetched', exec: () => this._fetchSocial('github', '/repos') },
+            createIssue: { event: 'issue_created', exec: (repo, issueData) => this._fetchSocial('github', '/issue', { method: 'POST', body: JSON.stringify({ repo, ...issueData }) }) }
+        });
+    }
+
+    google() {
+        return this._createProvider('google', {
+            getProfile: { event: 'profile_fetched', exec: () => this._fetchSocial('google', '/profile') },
+            getDriveFiles: { event: 'files_fetched', exec: () => this._fetchSocial('google', '/drive/files') },
+            sendEmail: { event: 'email_sent', exec: (emailData) => this._fetchSocial('google', '/email/send', { method: 'POST', body: JSON.stringify(emailData) }) }
+        });
+    }
+
+    x() { return this.twitter(); }
+    twitter() {
+        return this._createProvider('twitter', {
+            getProfile: { event: 'profile_fetched', exec: () => this._fetchSocial('twitter', '/profile') },
+            getTweets: { event: 'tweets_fetched', exec: () => this._fetchSocial('twitter', '/tweets') },
+            createTweet: { event: 'tweet_created', exec: (text) => this._fetchSocial('twitter', '/tweet', { method: 'POST', body: JSON.stringify({ text }) }) },
+            likeTweet: { event: 'tweet_liked', exec: (tweetId) => this._fetchSocial('twitter', '/like', { method: 'POST', body: JSON.stringify({ tweetId }) }) }
+        });
+    }
+
+    linkedin() {
+        return this._createProvider('linkedin', {
+            getProfile: { event: 'profile_fetched', exec: () => this._fetchSocial('linkedin', '/profile') },
+            createPost: { event: 'post_created', exec: (content) => this._fetchSocial('linkedin', '/post', { method: 'POST', body: JSON.stringify({ content }) }) },
+            getConnections: { event: 'connections_fetched', exec: () => this._fetchSocial('linkedin', '/connections') }
+        });
+    }
+
+    facebook() {
+        return this._createProvider('facebook', {
+            getProfile: { event: 'profile_fetched', exec: () => this._fetchSocial('facebook', '/profile') },
+            getPages: { event: 'pages_fetched', exec: () => this._fetchSocial('facebook', '/pages') },
+            createPost: { event: 'post_created', exec: (pageId, content) => this._fetchSocial('facebook', '/post', { method: 'POST', body: JSON.stringify({ pageId, content }) }) }
+        });
+    }
+
+    instagram() {
+        return this._createProvider('instagram', {
+            getProfile: { event: 'profile_fetched', exec: () => this._fetchSocial('instagram', '/profile') },
+            getMedia: { event: 'media_fetched', exec: () => this._fetchSocial('instagram', '/media') },
+            publishMedia: { event: 'media_published', exec: (mediaUrl, caption) => this._fetchSocial('instagram', '/publish', { method: 'POST', body: JSON.stringify({ mediaUrl, caption }) }) }
+        });
+    }
+
+    youtube() {
+        return this._createProvider('youtube', {
+            getProfile: { event: 'profile_fetched', exec: () => this._fetchSocial('youtube', '/profile') },
+            getChannels: { event: 'channels_fetched', exec: () => this._fetchSocial('youtube', '/channels') },
+            getVideos: { event: 'videos_fetched', exec: (channelId) => this._fetchSocial('youtube', `/videos?channelId=${channelId}`) },
+            likeVideo: { event: 'video_liked', exec: (videoId) => this._fetchSocial('youtube', '/like', { method: 'POST', body: JSON.stringify({ videoId }) }) }
+        });
+    }
+
     destroy() {
         if (this._refreshInterval) {
             clearInterval(this._refreshInterval);
@@ -2915,27 +3112,185 @@ class ZenuxOAuth {
 // Attach list of supported scopes for easy reference
 ZenuxOAuth.supportedScopes = SUPPORTED_SCOPES;
 
+// ==================== ZENUXS CLOUD (host + oauth proxy) ====================
+const _CLOUD_IGNORE = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.nuxt']);
+const _ENV_MASK = /^([^=]+)=.*/gm;
+
+class ZenuxsCloud {
+    /**
+     * @param {object} config
+     * @param {string} config.host  - Zenuxs Host API base URL e.g. 'http://localhost:7000'
+     * @param {ZenuxOAuth} config.oauth - authenticated ZenuxOAuth instance
+     *
+     * Usage:
+     *   import { ZenuxOAuth, ZenuxsCloud } from 'zenuxs-oauth';
+     *   const oauth = new ZenuxOAuth({ clientId: '...', redirectUri: '...' });
+     *   const host = new ZenuxsCloud({ host: 'http://localhost:7000', oauth });
+     *   // after login:
+     *   await host.servers.start('123');
+     *   await host.logs('123', { errors: false, last: 25 });
+     *   await host.files('123', { folder: 'src' });
+     */
+    constructor({ host, oauth }) {
+        if (!host || typeof host !== 'string')
+            throw new ZenuxOAuthError('host is required', 'INVALID_CONFIG');
+        if (!oauth || typeof oauth.getAccessToken !== 'function')
+            throw new ZenuxOAuthError('oauth must be a ZenuxOAuth instance', 'INVALID_CONFIG');
+        this._host = host.replace(/\/+$/, '');
+        this._oauth = oauth;
+
+        // Namespaced server control sub-object
+        this.servers = {
+            list:    ()           => this._post('/server/my', {}),
+            get:     (id)         => this._post('/server/get', { serverId: id }),
+            start:   (id)         => this._post('/server/start', { serverId: id }),
+            stop:    (id)         => this._post('/server/stop', { serverId: id }),
+            restart: (id)         => this._post('/server/restart', { serverId: id }),
+            status:  (id)         => this._post('/server/status', { serverId: id }),
+            stats:   (id)         => this._post('/server/stats', { serverId: id }),
+            monitor: (id)         => this._post('/server/monitor', { serverId: id }),
+            create:  (opts)       => this._post('/server/create', opts),
+            update:  (id, opts)   => this._post('/server/update', { serverId: id, ...opts }),
+            delete:  (id)         => this._post('/server/delete', { serverId: id }),
+            command: (id, cmd)    => this._post('/server/command', { serverId: id, command: cmd }),
+            commandHistory:      (id) => this._post('/server/command/history', { serverId: id }),
+            clearCommandHistory: (id) => this._post('/server/command/clear-history', { serverId: id }),
+        };
+
+        // Namespaced GitHub / pipeline sub-object
+        this.github = {
+            connect:    ()                      => this._githubConnect(),
+            status:     ()                      => this._post('/api/cicd/github-status', {}),
+            disconnect: ()                      => this._post('/api/cicd/github-disconnect', {}),
+            pipelines:  (serverId)              => this._post('/api/cicd/get', { serverId }),
+            addPipeline:(serverId, opts)         => this._post('/api/cicd/create', { serverId, ...opts }),
+            editPipeline:(pipelineId, serverId, opts) => this._post('/api/cicd/update', { pipelineId, serverId, ...opts }),
+            removePipeline:(pipelineId, serverId)    => this._post('/api/cicd/delete', { pipelineId, serverId }),
+            push:       (serverId, pipelineId)  => this._post('/api/cicd/deploy', { serverId, pipelineId }),
+            deployments:(serverId)              => this._post('/api/cicd/deployments', { serverId }),
+            deployment: (deploymentId)          => this._post('/api/cicd/deployment-status', { deploymentId }),
+        };
+    }
+
+    // ---- internal helpers ----
+
+    async _fetch(path, options = {}) {
+        const token = this._oauth.getAccessToken();
+        if (!token) throw new ZenuxOAuthError('Not authenticated — call oauth.login() first', 'NO_ACCESS_TOKEN');
+        const fetchFn = await this._oauth.getFetchFunction();
+        const res = await fetchFn(`${this._host}${path}`, {
+            ...options,
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                ...(options.headers || {})
+            }
+        });
+        if (!res.ok) {
+            const text = await res.text();
+            throw new ZenuxOAuthError(`Host API ${res.status}: ${text}`, 'HOST_API_ERROR', { status: res.status });
+        }
+        return res.json();
+    }
+
+    _post(path, body) {
+        return this._fetch(path, { method: 'POST', body: JSON.stringify(body) });
+    }
+
+    _githubConnect() {
+        const tokens = this._oauth.getTokens();
+        if (!tokens) throw new ZenuxOAuthError('Not authenticated', 'NO_ACCESS_TOKEN');
+        return this._post('/api/cicd/github-connect-oauth', { oauthToken: tokens.access_token });
+    }
+
+    // ---- logs(serverId, opts) ----
+    // opts: { errors: bool, last: number }
+    // errors:true  => only error/exception/fatal lines
+    // errors:false => all logs (default)
+    // last:N       => last N lines (default 100)
+    async logs(serverId, opts = {}) {
+        const last = typeof opts.last === 'number' ? opts.last : 100;
+        const errorsOnly = opts.errors === true;
+        const res = await this._post('/code/file/get', { serverId, filePath: 'server.log' });
+        const raw = res.content || '';
+        const lines = raw.split('\n').filter(l => l.trim());
+        const tail = lines.slice(-last);
+        const result = errorsOnly
+            ? tail.filter(l => /\b(error|exception|fatal|uncaughtException|unhandledRejection)\b/i.test(l))
+            : tail;
+        return { success: true, lines: result, total: result.length };
+    }
+
+    // ---- files(serverId, opts) ----
+    // opts: { folder: string }  — specific folder, default root
+    // node_modules is always excluded; .env shows filename only (values masked)
+    async files(serverId, opts = {}) {
+        const res = await this._post('/files/server', { serverId, options: { maxDepth: opts.maxDepth || null } });
+        const filter = (items) => (items || []).reduce((acc, f) => {
+            if (_CLOUD_IGNORE.has(f.name)) return acc;
+            if (f.type === 'folder') {
+                if (!opts.folder || f.path === opts.folder || f.path.startsWith(opts.folder + '/')) {
+                    acc.push({ ...f, children: filter(f.children) });
+                } else {
+                    acc.push({ ...f, children: filter(f.children) });
+                }
+            } else {
+                acc.push(f);
+            }
+            return acc;
+        }, []);
+        return { success: true, files: filter(res.files) };
+    }
+
+    // ---- file(serverId, filePath) — read a file; .env values are masked ----
+    async file(serverId, filePath) {
+        const res = await this._post('/code/file/get', { serverId, filePath });
+        const isEnv = /(\.env)(\.\w+)?$/.test(filePath);
+        if (isEnv && res.content) {
+            res.content = res.content.replace(_ENV_MASK, '$1=***');
+        }
+        return res;
+    }
+
+    // ---- updateFile(serverId, filePath, content) ----
+    updateFile(serverId, filePath, content) {
+        return this._post('/code/file/update', { serverId, filePath, newContent: content });
+    }
+
+    // ---- deleteFile(serverId, filePath) ----
+    deleteFile(serverId, filePath) {
+        return this._post('/server/file/delete', { serverId, filePath });
+    }
+
+    // ---- errors(serverId, last) — shorthand for logs with errors:true ----
+    errors(serverId, last = 50) {
+        return this.logs(serverId, { errors: true, last });
+    }
+}
+
 // ==================== EXPORT ====================
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = ZenuxOAuth;
     module.exports.ZenuxOAuth = ZenuxOAuth;
     module.exports.ZenuxOAuthError = ZenuxOAuthError;
+    module.exports.ZenuxsCloud = ZenuxsCloud;
 } else if (typeof define === 'function' && define.amd) {
     define([], function () {
-        return {
-            ZenuxOAuth,
-            ZenuxOAuthError
-        };
+        return { ZenuxOAuth, ZenuxOAuthError, ZenuxsCloud };
     });
 } else if (typeof window !== 'undefined') {
     window.ZenuxOAuth = ZenuxOAuth;
     window.ZenuxOAuthError = ZenuxOAuthError;
+    window.ZenuxsCloud = ZenuxsCloud;
 } else if (typeof global !== 'undefined') {
     global.ZenuxOAuth = ZenuxOAuth;
     global.ZenuxOAuthError = ZenuxOAuthError;
+    global.ZenuxsCloud = ZenuxsCloud;
 }
 
 if (typeof exports !== 'undefined') {
     exports.ZenuxOAuth = ZenuxOAuth;
     exports.ZenuxOAuthError = ZenuxOAuthError;
+    exports.ZenuxsCloud = ZenuxsCloud;
 }
