@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zenux OAuth Dedicated Callback Demo</title>
+    <style>
+        :root {
+            --bg: #f6f9fc;
+            --card: #ffffff;
+            --ink: #102033;
+            --muted: #607286;
+            --line: #d5e0ea;
+            --success: #0f6a3a;
+            --success-bg: #e8f8ef;
+            --error: #8b1d1d;
+            --error-bg: #fdecec;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            background:
+                radial-gradient(circle at top, rgba(15, 124, 255, 0.12), transparent 35%),
+                var(--bg);
+            font-family: "Segoe UI", system-ui, sans-serif;
+            color: var(--ink);
+        }
+
+        .card {
+            width: min(680px, 100%);
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 24px;
+            padding: 28px;
+            box-shadow: 0 18px 40px rgba(16, 32, 51, 0.08);
+        }
+
+        h1 {
+            margin: 0 0 10px;
+            font-size: 32px;
+        }
+
+        p {
+            margin: 0 0 14px;
+            color: var(--muted);
+            line-height: 1.7;
+        }
+
+        .status {
+            border-radius: 18px;
+            padding: 14px 16px;
+            margin: 18px 0;
+            background: #edf4fb;
+            color: var(--ink);
+            line-height: 1.6;
+        }
+
+        .status.success {
+            background: var(--success-bg);
+            color: var(--success);
+        }
+
+        .status.error {
+            background: var(--error-bg);
+            color: var(--error);
+        }
+
+        pre {
+            margin: 0;
+            padding: 16px;
+            border-radius: 18px;
+            background: #edf4fb;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font: 13px/1.6 Consolas, "Courier New", monospace;
+        }
+
+        a {
+            color: #0b5fcc;
+        }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <h1>Dedicated callback page</h1>
+        <p>
+            This page is only needed if you want a separate redirect URI such as
+            <code>/callback.html</code>. The SDK no longer requires a dedicated callback page
+            for normal browser use.
+        </p>
+        <p>
+            To use this demo, start login from <code>index.html</code> or your own app with
+            <code>redirectUri</code> set to this file.
+        </p>
+
+        <div id="status" class="status">Waiting for OAuth callback parameters...</div>
+        <pre id="output">No callback handled yet.</pre>
+
+        <p style="margin-top: 18px;">
+            Return to <a href="./index.html">the same-page demo</a>.
+        </p>
+    </main>
+
+    <script src="../../dist/zenux-oauth.js"></script>
+    <script>
+        const statusEl = document.getElementById('status');
+        const outputEl = document.getElementById('output');
+
+        function setStatus(message, type) {
+            statusEl.className = `status${type ? ` ${type}` : ''}`;
+            statusEl.textContent = message;
+        }
+
+        const oauth = new ZenuxOAuth({
+            clientId: 'f13975eff3604b2e',
+            storage: 'localStorage',
+            debug: true
+        });
+
+        window.addEventListener('load', async () => {
+            try {
+                const result = await oauth.init({ closePopup: false });
+                const tokens = oauth.getTokens();
+
+                if (result && result.access_token) {
+                    setStatus('Dedicated callback completed successfully.', 'success');
+                    outputEl.textContent = JSON.stringify(result, null, 2);
+                    return;
+                }
+
+                if (tokens && tokens.access_token) {
+                    setStatus('Tokens are already available in storage.', 'success');
+                    outputEl.textContent = JSON.stringify(tokens, null, 2);
+                    return;
+                }
+
+                setStatus('This page did not receive a callback yet.', '');
+            } catch (error) {
+                setStatus(`Callback failed: ${error.message}`, 'error');
+                outputEl.textContent = JSON.stringify({
+                    code: error.code,
+                    message: error.message,
+                    details: error.details || null
+                }, null, 2);
+            }
+        });
+    </script>
+</body>
+</html>

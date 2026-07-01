@@ -1,0 +1,14 @@
+src/
+scripts/
+build.js
+.gitignore
+.npmignore
+*.md
+!README.md
+test/
+examples/
+.coverage
+.nyc_output
+.editorconfig
+.eslintrc
+.prettierrc

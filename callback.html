@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zenux OAuth Callback</title>
+    <style>
+        :root {
+            --bg: #f5f8fc;
+            --card: #ffffff;
+            --ink: #102033;
+            --muted: #607286;
+            --line: #d5e0ea;
+            --success: #0f6a3a;
+            --success-bg: #e8f8ef;
+            --error: #8b1d1d;
+            --error-bg: #fdecec;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            background:
+                radial-gradient(circle at top, rgba(15, 124, 255, 0.12), transparent 35%),
+                var(--bg);
+            color: var(--ink);
+            font-family: "Segoe UI", system-ui, sans-serif;
+        }
+
+        .card {
+            width: min(680px, 100%);
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 24px;
+            padding: 28px;
+            box-shadow: 0 18px 40px rgba(16, 32, 51, 0.08);
+        }
+
+        h1 {
+            margin: 0 0 10px;
+            font-size: 32px;
+        }
+
+        p {
+            margin: 0 0 14px;
+            color: var(--muted);
+            line-height: 1.7;
+        }
+
+        .status {
+            border-radius: 18px;
+            padding: 14px 16px;
+            margin: 18px 0;
+            background: #edf4fb;
+            color: var(--ink);
+            line-height: 1.6;
+        }
+
+        .status.success {
+            background: var(--success-bg);
+            color: var(--success);
+        }
+
+        .status.error {
+            background: var(--error-bg);
+            color: var(--error);
+        }
+
+        pre {
+            margin: 0;
+            padding: 16px;
+            border-radius: 18px;
+            background: #edf4fb;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font: 13px/1.6 Consolas, "Courier New", monospace;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 18px;
+        }
+
+        a,
+        button {
+            border: 0;
+            border-radius: 14px;
+            padding: 12px 16px;
+            background: #0f7cff;
+            color: #ffffff;
+            text-decoration: none;
+            font: 600 14px/1 "Segoe UI", system-ui, sans-serif;
+            cursor: pointer;
+        }
+
+        button.secondary,
+        a.secondary {
+            background: #eef2f6;
+            color: var(--ink);
+        }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <h1>Processing OAuth callback</h1>
+        <p>
+            This page is optional. Use it only when you want a dedicated callback route
+            instead of the default same-page flow.
+        </p>
+
+        <div id="status" class="status">Checking callback parameters...</div>
+        <pre id="output">Waiting for callback data.</pre>
+
+        <div id="actions" class="actions hidden">
+            <a id="homeLink" href="/" class="secondary">Go home</a>
+            <button id="closeButton" type="button">Close window</button>
+        </div>
+    </main>
+
+    <script src="./zenux-oauth.js"></script>
+    <script>
+        const STORAGE_PREFIX = 'zenux_oauth_';
+        const statusEl = document.getElementById('status');
+        const outputEl = document.getElementById('output');
+        const actionsEl = document.getElementById('actions');
+        const closeButton = document.getElementById('closeButton');
+        const homeLink = document.getElementById('homeLink');
+
+        function setStatus(message, type) {
+            statusEl.className = `status${type ? ` ${type}` : ''}`;
+            statusEl.textContent = message;
+        }
+
+        function getStoredValue(key) {
+            const fullKey = `${STORAGE_PREFIX}${key}`;
+
+            try {
+                const sessionValue = sessionStorage.getItem(fullKey);
+                if (sessionValue) {
+                    return sessionValue;
+                }
+            } catch {}
+
+            try {
+                const localValue = localStorage.getItem(fullKey);
+                if (localValue) {
+                    return localValue;
+                }
+            } catch {}
+
+            return null;
+        }
+
+        function resolveParentInstance() {
+            try {
+                if (window.opener && window.opener !== window && window.opener.ZenuxOAuthInstance) {
+                    return window.opener.ZenuxOAuthInstance;
+                }
+            } catch {}
+
+            try {
+                if (window.parent && window.parent !== window && window.parent.ZenuxOAuthInstance) {
+                    return window.parent.ZenuxOAuthInstance;
+                }
+            } catch {}
+
+            return null;
+        }
+
+        function resolveClientConfig() {
+            const params = new URLSearchParams(window.location.search);
+            const parentInstance = resolveParentInstance();
+
+            const clientId = params.get('client_id')
+                || (parentInstance && parentInstance.config && parentInstance.config.clientId)
+                || getStoredValue('client_id');
+
+            const authServer = params.get('auth_server')
+                || (parentInstance && parentInstance.config && parentInstance.config.authServer)
+                || getStoredValue('auth_server')
+                || 'https://api.auth.zenuxs.in';
+
+            const debug = params.get('debug') === 'true'
+                || !!(parentInstance && parentInstance.config && parentInstance.config.debug);
+
+            return { clientId, authServer, debug };
+        }
+
+        closeButton.addEventListener('click', () => {
+            if (window.opener) {
+                window.close();
+                return;
+            }
+
+            window.location.href = homeLink.href;
+        });
+
+        window.addEventListener('load', async () => {
+            const config = resolveClientConfig();
+
+            if (!config.clientId) {
+                setStatus('Unable to resolve clientId for callback handling.', 'error');
+                outputEl.textContent = JSON.stringify({
+                    message: 'Provide client_id in the query string or start login from a page that initialized ZenuxOAuth.'
+                }, null, 2);
+                actionsEl.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                const oauth = new ZenuxOAuth(config);
+                const result = await oauth.init({ closePopup: false });
+                const tokens = result && result.access_token ? result : oauth.getTokens();
+
+                if (tokens && tokens.access_token) {
+                    setStatus('Callback handled successfully.', 'success');
+                    outputEl.textContent = JSON.stringify(tokens, null, 2);
+                } else {
+                    setStatus('No callback parameters found on this page.', '');
+                    outputEl.textContent = JSON.stringify({
+                        hint: 'Use this file as your redirectUri, then return here from the OAuth server.'
+                    }, null, 2);
+                }
+            } catch (error) {
+                setStatus(`Callback failed: ${error.message}`, 'error');
+                outputEl.textContent = JSON.stringify({
+                    code: error.code || 'OAUTH_ERROR',
+                    message: error.message,
+                    details: error.details || null
+                }, null, 2);
+            }
+
+            actionsEl.classList.remove('hidden');
+        });
+    </script>
+</body>
+</html>

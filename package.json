@@ -1,0 +1,66 @@
+{
+  "name": "zenuxs-oauth",
+  "version": "6.1.0",
+  "type": "commonjs",
+  "description": "Lightweight OAuth 2.0 client for Zenuxs authentication system",
+  "main": "./dist/zenux-oauth.cjs.js",
+  "module": "./dist/zenux-oauth.esm.js",
+  "browser": "./dist/zenux-oauth.js",
+  "types": "./dist/zenux-oauth.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/zenux-oauth.esm.js",
+      "require": "./dist/zenux-oauth.cjs.js",
+      "browser": "./dist/zenux-oauth.js",
+      "default": "./dist/zenux-oauth.js"
+    },
+    "./callback": {
+      "browser": "./dist/callback.html",
+      "default": "./dist/callback.html"
+    }
+  },
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node build.js",
+    "build:dev": "NODE_ENV=development node build.js",
+    "prepublishOnly": "npm run build",
+    "test": "echo \"No tests specified\" && exit 0",
+    "lint": "echo \"No linter specified\"",
+    "version": "npm run build",
+    "prepack": "npm run build"
+  },
+  "keywords": [
+    "oauth",
+    "oauth2",
+    "authentication",
+    "zenuxs",
+    "pkce",
+    "openid",
+    "sso",
+    "auth",
+    "login"
+  ],
+  "author": {
+    "name": "Developer RS",
+    "email": "rs@zenuxs.in",
+    "url": "https://rs.zenuxs.in"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zenuxs-dev/zenuxs-oauth"
+  },
+  "bugs": {
+    "url": "https://github.com/zenuxs-dev/zenuxs-oauth/issues"
+  },
+  "homepage": "https://zenuxs.in",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "devDependencies": {
+    "uglify-js": "^3.17.4"
+  }
+}
