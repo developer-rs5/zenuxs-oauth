@@ -33,7 +33,7 @@ npm install zenuxs-oauth
 Browser CDN:
 
 ```html
-<script src="https://unpkg.com/zenuxs-oauth@5.3.0/dist/zenux-oauth.min.js"></script>
+<script src="https://unpkg.com/zenuxs-oauth@6.1.1/dist/zenux-oauth.min.js"></script>
 ```
 
 ## Quick Start
@@ -52,7 +52,7 @@ If your login page is `/login` or `/login.html`, the SDK can:
 ```html
 <button id="login">Continue with Zenuxs</button>
 
-<script src="https://unpkg.com/zenuxs-oauth@5.3.0/dist/zenux-oauth.min.js"></script>
+<script src="https://unpkg.com/zenuxs-oauth@6.1.1/dist/zenux-oauth.min.js"></script>
 <script>
 const oauth = new ZenuxOAuth({
   clientId: 'your-client-id',

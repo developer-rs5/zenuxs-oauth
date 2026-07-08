@@ -540,6 +540,9 @@ class ZenuxOAuth {
             disableFallback: config.disableFallback === true,
             // NEW: never use window.location.origin to resolve relative URLs
             disableOriginFallback: config.disableOriginFallback === true,
+            ssoEnabled: config.ssoEnabled !== false,
+            webUrl: config.webUrl || null,
+            ssoUrl: config.ssoUrl || null,
             ...config
         };
     }
@@ -1415,6 +1418,11 @@ class ZenuxOAuth {
     async init(options = {}) {
         const normalizedOptions = this.normalizeOptions(options);
         const runtimeUrl = this.getRuntimeUrl(normalizedOptions);
+
+        // SSO: show floating bar if user is logged into Zenuxs but not this site
+        if (isBrowser && this.config.ssoEnabled && !this.isAuthenticated()) {
+            this._checkSSOStatus();
+        }
 
         if (isBrowser && !this.hasOAuthCallback(runtimeUrl)) {
             const parentInstance = this.getParentOAuthInstance();
@@ -3081,6 +3089,242 @@ class ZenuxOAuth {
             getVideos: { event: 'videos_fetched', exec: (channelId) => this._fetchSocial('youtube', `/videos?channelId=${channelId}`) },
             likeVideo: { event: 'video_liked', exec: (videoId) => this._fetchSocial('youtube', '/like', { method: 'POST', body: JSON.stringify({ videoId }) }) }
         });
+    }
+
+    // ==================== SSO FLOATING BAR ====================
+
+    _checkSSOStatus() {
+        if (!isBrowser || this._ssoDismissed) return;
+
+        const config = this.config;
+        let authUrl = config.ssoUrl;
+        if (!authUrl) {
+            // Derive web URL from api/auth server by stripping subdomain prefixes
+            authUrl = config.webUrl || config.authServer
+                .replace(/\/api(\/.*)?$/, '')
+                .replace(/^(https?:\/\/)(?:api|auth)\./i, '$1')
+                .replace(/^(https?:\/\/)(?:api|auth)\./i, '$1');
+        }
+
+        const iframeSrc = authUrl + '/sso-status.html?api=' + encodeURIComponent(config.authServer);
+        this.debugLog('SSO', 'Checking session via iframe: ' + iframeSrc);
+
+        const iframe = document.createElement('iframe');
+        iframe.style.cssText = 'display:none!important;width:0!important;height:0!important;border:0!important;position:absolute!important;';
+        iframe.src = iframeSrc;
+        iframe.setAttribute('tabindex', '-1');
+        document.body.appendChild(iframe);
+
+        const timeout = setTimeout(() => {
+            this.debugLog('SSO', 'Timeout — no response from SSO iframe');
+            this.emit('ssoNone');
+            try { document.body.removeChild(iframe); } catch (_) {}
+        }, 6000);
+
+        const handler = (e) => {
+            console.log('[ZenuxOAuth:SSO:DEBUG] message received from origin:', e.origin);
+            if (e.data && e.data.type === 'ZENUXS_SSO_STATUS') {
+                clearTimeout(timeout);
+                try { document.body.removeChild(iframe); } catch (_) {}
+                window.removeEventListener('message', handler);
+                console.log('[ZenuxOAuth:SSO:DEBUG] loggedIn:', e.data.loggedIn);
+                if (e.data.loggedIn) {
+                    console.log('[ZenuxOAuth:SSO:DEBUG] user:', e.data.currentUser, 'sessions:', e.data.savedSessions?.length);
+                    this.emit('ssoDetected', e.data.currentUser);
+                    try {
+                        this._renderSSOBar(e.data.currentUser, e.data.savedSessions || [], authUrl);
+                        console.log('[ZenuxOAuth:SSO:DEBUG] bar rendered, DOM has bar:', !!document.getElementById('zenuxs-sso-bar'));
+                    } catch (err) {
+                        console.error('[ZenuxOAuth:SSO:DEBUG] bar render error:', err);
+                    }
+                } else {
+                    this.emit('ssoNone');
+                }
+            }
+        };
+        window.addEventListener('message', handler);
+    }
+
+    _renderSSOBar(user, sessions, authUrl) {
+        const id = 'zenuxs-sso-bar';
+        if (document.getElementById(id)) return;
+
+        const config = this.config;
+        const MAX_VISIBLE = 2;
+
+        const all = sessions.filter(s => s && s.user);
+        console.log('[ZenuxOAuth:SSO:DEBUG] sessions count:', sessions.length, 'with user:', all.length, 'users:', all.map(s => s.user.email || s.user.name));
+        const seen = {};
+        const uniq = all.filter(s => {
+            const key = s.user.email || s.user.phone || s.user.username || s.user.name;
+            if (seen[key]) return false;
+            seen[key] = true;
+            return true;
+        });
+        console.log('[ZenuxOAuth:SSO:DEBUG] uniq count:', uniq.length);
+        const overflow = uniq.length - MAX_VISIBLE;
+
+        const redirectUri = config.redirectUri || window.location.href;
+        const authorizeUrl = authUrl + '/oauth/authorize?client_id=' + encodeURIComponent(config.clientId) + '&redirect_uri=' + encodeURIComponent(redirectUri) + '&scope=' + encodeURIComponent(config.scopes);
+        const loginUrl = authUrl + '/login?redirect=' + encodeURIComponent(authorizeUrl);
+
+        const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+        const avatarHTML = (url, name, size) => {
+            if (url && url !== 'null' && url !== 'undefined')
+                return '<img src="' + esc(url) + '" alt="" style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;object-fit:cover;flex-shrink:0;background:#27272a;' + (size > 30 ? 'border:2px solid rgba(63,63,70,1);' : 'border:1px solid rgba(63,63,70,1);') + '" />';
+            const s2 = size > 30 ? 20 : 16;
+            return '<svg style="width:' + s2 + 'px;height:' + s2 + 'px;color:#52525b;flex-shrink:0;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>';
+        };
+
+        const bar = document.createElement('div');
+        bar.id = id;
+        bar.style.cssText = 'position:fixed;top:16px;right:16px;z-index:999999;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;transition:all 0.6s cubic-bezier(0.16,1,0.3,1);opacity:0;transform:translateY(-20px);pointer-events:none;';
+
+        bar.innerHTML =
+            '<div style="background:rgba(24,24,27,0.96);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(39,39,42,0.7);border-radius:16px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.6);overflow:hidden;">' +
+            '  <div style="display:flex;align-items:center;gap:10px;padding:8px 14px 8px 12px;">' +
+            '    <div style="width:32px;height:32px;border-radius:50%;overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#27272a;border:2px solid rgba(63,63,70,1);">' + avatarHTML(user.avatar, user.name, 32) + '</div>' +
+            '    <div style="line-height:1.25;min-width:0;max-width:130px;">' +
+            '      <div style="font-size:10px;color:#71717a;font-weight:500;line-height:1;margin-bottom:2px;">Continue as</div>' +
+            '      <div style="font-size:14px;color:#fff;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(user.name || 'User') + '</div>' +
+            '    </div>' +
+            '    <button id="zenuxs-sso-continue" style="background:#9333ea;color:#fff;border:none;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;transition:background 0.15s;white-space:nowrap;flex-shrink:0;">Continue</button>' +
+            '    <div style="position:relative;flex-shrink:0;">' +
+            '      <button id="zenuxs-sso-dropdown-btn" style="background:none;border:none;color:#71717a;cursor:pointer;padding:4px;display:flex;align-items:center;transition:color 0.15s;">' +
+            '        <svg id="zenuxs-sso-chevron" style="width:16px;height:16px;transition:transform 0.2s;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>' +
+            '      </button>' +
+            '      <div id="zenuxs-sso-dropdown" style="display:none;position:absolute;right:0;top:calc(100% + 8px);width:230px;background:rgba(24,24,27,0.98);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(39,39,42,0.7);border-radius:12px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.6);padding:6px;z-index:1000;animation:zenuxsFadeInUp 0.25s ease-out;">' +
+            '        <div style="font-size:10px;color:#71717a;font-weight:500;text-transform:uppercase;letter-spacing:0.05em;padding:6px 8px 8px;">Saved Accounts</div>' +
+            (uniq.length > 0 ?
+            uniq.slice(0, MAX_VISIBLE).map((s, i) => {
+                const su = s.user;
+                const hint = su.email || su.phone || su.username || '';
+                this._ssoAcctHints = this._ssoAcctHints || [];
+                this._ssoAcctHints.push(hint);
+                return '' +
+                    '        <button class="zenuxs-sso-acct" data-idx="' + i + '" style="display:flex;align-items:center;gap:10px;width:100%;padding:8px;border:none;background:none;border-radius:8px;cursor:pointer;text-align:left;transition:background 0.15s;color:#e4e4e7;">' +
+                    '          <div style="width:28px;height:28px;border-radius:50%;overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#27272a;border:1px solid rgba(63,63,70,1);">' + avatarHTML(su.avatar, su.name, 28) + '</div>' +
+                    '          <div style="overflow:hidden;min-width:0;">' +
+                    '            <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(su.name) + '</div>' +
+                    '          </div>' +
+                    '        </button>';
+            }).join('') +
+            (overflow > 0 ? '        <div style="font-size:11px;color:#52525b;text-align:center;padding:7px 0 5px;border-top:1px solid rgba(39,39,42,0.4);margin-top:4px;">+' + overflow + ' more ' + (overflow === 1 ? 'account' : 'accounts') + '</div>' : '')
+            : '        <div style="font-size:12px;color:#52525b;text-align:center;padding:10px 0;">No other saved accounts</div>') +
+            '        <div style="border-top:1px solid rgba(39,39,42,0.4);margin-top:4px;padding-top:4px;">' +
+            '          <button id="zenuxs-sso-add-acct" style="display:flex;align-items:center;gap:8px;width:100%;padding:8px;border:none;background:none;border-radius:8px;cursor:pointer;text-align:left;transition:background 0.15s;font-size:12px;color:#a1a1aa;">' +
+            '            <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>' +
+            '            Use another account' +
+            '          </button>' +
+            '        </div>' +
+            '      </div>' +
+            '    </div>' +
+            '    <button id="zenuxs-sso-close" style="background:none;border:none;color:#52525b;cursor:pointer;padding:4px;display:flex;align-items:center;transition:color 0.15s;flex-shrink:0;">' +
+            '      <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>' +
+            '    </button>' +
+            '  </div>' +
+            '</div>';
+
+        document.body.appendChild(bar);
+
+        if (!document.getElementById('zenuxs-sso-keyframes')) {
+            const kf = document.createElement('style');
+            kf.id = 'zenuxs-sso-keyframes';
+            kf.textContent = '@keyframes zenuxsFadeInUp{from{opacity:0;transform:translateY(8px) scale(0.96)}to{opacity:1;transform:translateY(0) scale(1)}}';
+            document.head.appendChild(kf);
+        }
+
+        requestAnimationFrame(() => {
+            bar.style.opacity = '1';
+            bar.style.transform = 'translateY(0)';
+            bar.style.pointerEvents = 'auto';
+        });
+
+        bar.querySelector('#zenuxs-sso-continue').addEventListener('click', () => { window.location.href = authorizeUrl; });
+
+        bar.querySelector('#zenuxs-sso-close').addEventListener('click', () => {
+            this._ssoDismissed = true;
+            bar.style.opacity = '0';
+            bar.style.transform = 'translateY(-20px)';
+            bar.style.pointerEvents = 'none';
+            setTimeout(() => { try { document.body.removeChild(bar); } catch (_) {} }, 600);
+        });
+
+        const ddBtn = bar.querySelector('#zenuxs-sso-dropdown-btn');
+        const dd = bar.querySelector('#zenuxs-sso-dropdown');
+        const chevron = bar.querySelector('#zenuxs-sso-chevron');
+        let ddOpen = false;
+
+        ddBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            ddOpen = !ddOpen;
+            dd.style.display = ddOpen ? 'block' : 'none';
+            if (chevron) chevron.style.transform = ddOpen ? 'rotate(180deg)' : '';
+        });
+
+        document.addEventListener('click', (e) => {
+            if (ddOpen && !dd.contains(e.target) && e.target !== ddBtn && !ddBtn.contains(e.target)) {
+                ddOpen = false;
+                dd.style.display = 'none';
+                if (chevron) chevron.style.transform = '';
+            }
+        });
+
+        bar.querySelectorAll('.zenuxs-sso-acct').forEach(btn => {
+            btn.addEventListener('mouseenter', function () { this.style.background = 'rgba(39,39,42,0.4)'; });
+            btn.addEventListener('mouseleave', function () { this.style.background = 'none'; });
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.getAttribute('data-idx'), 10);
+                const hint = this._ssoAcctHints && this._ssoAcctHints[idx] ? this._ssoAcctHints[idx] : '';
+                window.location.href = authUrl + '/oauth/authorize?client_id=' + encodeURIComponent(config.clientId) + '&redirect_uri=' + encodeURIComponent(redirectUri) + '&scope=' + encodeURIComponent(config.scopes) + (hint ? '&login_hint=' + encodeURIComponent(hint) : '');
+            });
+        });
+
+        bar.querySelector('#zenuxs-sso-add-acct').addEventListener('click', () => { window.location.href = loginUrl; });
+    }
+
+    // ── Multi-Account API ────────────────────────────────────
+
+    getSavedAccounts() {
+        try {
+            const raw = localStorage.getItem('zenuxs_sessions');
+            if (!raw) return [];
+            const sessions = JSON.parse(raw);
+            return Array.isArray(sessions) ? sessions.filter(s => s && s.user) : [];
+        } catch { return []; }
+    }
+
+    async switchAccount(emailOrUser) {
+        const accounts = this.getSavedAccounts();
+        const target = accounts.find(a =>
+            a.user.email === emailOrUser ||
+            a.user.phone === emailOrUser ||
+            a.user.username === emailOrUser ||
+            (typeof emailOrUser === 'object' && a.user.email === emailOrUser.email)
+        );
+        if (!target) throw new Error('Account not found in saved sessions');
+        if (!target.token) throw new Error('Account has no stored token');
+        if (!isBrowser) return;
+        try {
+            const res = await fetch(this.config.authServer + '/auth/switch-account', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ token: target.token })
+            });
+            const data = await res.json();
+            if (data.success) {
+                this.debugLog('MULTI', 'Switched to ' + (target.user.email || target.user.name));
+                this.emit('accountSwitched', target.user);
+            } else {
+                throw new Error(data.message || 'Switch failed');
+            }
+        } catch (err) {
+            this.debugLog('MULTI', 'Switch error: ' + err.message);
+            this.emit('error', { code: 'SWITCH_FAILED', message: err.message });
+            throw err;
+        }
     }
 
     destroy() {

@@ -49,6 +49,7 @@ fs.writeFileSync(
 
 let esmCode = browserCode
     .replace(/\/\/ UMD pattern for universal module definition[\s\S]*?\(typeof window !== 'undefined' \? window : this, function \(\) \{[\s\S]*?return ZenuxOAuth;[\s\S]*?\}\)\);/, '')
+    .replace(/\/\/ ==================== EXPORT ====================[\s\S]*/, '')
     .trim() + '\n\nexport default ZenuxOAuth;\nexport { ZenuxOAuth, ZenuxOAuthError };';
 
 fs.writeFileSync(
