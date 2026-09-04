@@ -3521,6 +3521,9 @@ class ZenuxAuthElement extends (typeof HTMLElement !== 'undefined' ? HTMLElement
     constructor() {
         super();
         this._mountHandle = null;
+        this._mountTimer = null;
+        this._isMounting = false;
+        this._hasConnected = false;
     }
 
     static get observedAttributes() {
@@ -3528,30 +3531,60 @@ class ZenuxAuthElement extends (typeof HTMLElement !== 'undefined' ? HTMLElement
     }
 
     connectedCallback() {
-        this.mount();
+        this._hasConnected = true;
+        this._scheduleMount();
     }
 
     disconnectedCallback() {
+        this._hasConnected = false;
+        if (this._mountTimer) {
+            clearTimeout(this._mountTimer);
+            this._mountTimer = null;
+        }
         if (this._mountHandle && typeof this._mountHandle.unmount === 'function') {
             this._mountHandle.unmount();
             this._mountHandle = null;
         }
+        this._isMounting = false;
     }
 
     attributeChangedCallback(name, oldValue, newValue) {
-        if (oldValue !== newValue && this.isConnected) {
-            this.mount();
+        if (oldValue !== newValue && this._hasConnected) {
+            this._scheduleMount();
         }
     }
 
+    _scheduleMount() {
+        if (this._mountTimer) {
+            clearTimeout(this._mountTimer);
+        }
+        this._mountTimer = setTimeout(() => {
+            this._mountTimer = null;
+            this.mount();
+        }, 50);
+    }
+
     async mount() {
+        if (this._mountTimer) {
+            clearTimeout(this._mountTimer);
+            this._mountTimer = null;
+        }
+
+        if (this._isMounting) {
+            return;
+        }
+        this._isMounting = true;
+
         if (this._mountHandle && typeof this._mountHandle.unmount === 'function') {
             this._mountHandle.unmount();
             this._mountHandle = null;
         }
 
+        this.innerHTML = '';
+
         const clientId = this.getAttribute('client-id') || (this.oauth && this.oauth.config.clientId);
         if (!clientId) {
+            this._isMounting = false;
             return;
         }
 
@@ -3600,6 +3633,8 @@ class ZenuxAuthElement extends (typeof HTMLElement !== 'undefined' ? HTMLElement
             if (typeof this.onError === 'function') {
                 this.onError(err);
             }
+        } finally {
+            this._isMounting = false;
         }
     }
 }

@@ -692,10 +692,9 @@
           tag.setAttribute('client-id', clientIdInput.value.trim());
           tag.setAttribute('scope', scopesInput.value.trim());
           tag.setAttribute('auth-server', authServerInput.value.trim());
-          tag.mount();
           tag.scrollIntoView({ behavior: 'smooth', block: 'center' });
           setStatus('running', 'Tag active in UI');
-          addLog('info', 'Refreshed & focused <zenux-auth> component in UI.');
+          addLog('info', 'Focused <zenux-auth> component in UI.');
         }
         return;
       }
