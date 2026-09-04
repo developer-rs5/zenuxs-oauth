@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zenuxs OAuth - In-UI (Bottom Sheet) Demo & Tester</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: rgba(15, 23, 42, 0.75);
+      --card-border: rgba(148, 163, 184, 0.12);
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #c026d3;
+      --primary-hover: #d946ef;
+      --accent: #38bdf8;
+      --success: #10b981;
+      --danger: #f43f5e;
+      --warning: #f59e0b;
+      --code-bg: #030712;
+      --glow: rgba(192, 38, 211, 0.25);
+    }
+
+    [data-theme="light"] {
+      --bg: #f8fafc;
+      --card-bg: rgba(255, 255, 255, 0.9);
+      --card-border: rgba(203, 213, 225, 0.8);
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --primary: #c026d3;
+      --primary-hover: #a21caf;
+      --accent: #0284c7;
+      --success: #059669;
+      --danger: #e11d48;
+      --warning: #d97706;
+      --code-bg: #f1f5f9;
+      --glow: rgba(192, 38, 211, 0.15);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+      transition: background 0.3s ease, color 0.3s ease;
+      position: relative;
+    }
+
+    /* Ambient glow backgrounds */
+    .ambient-bg {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+    }
+    .blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.35;
+      animation: float 14s infinite alternate ease-in-out;
+    }
+    .blob-1 { top: -10%; left: 10%; width: 500px; height: 500px; background: #c026d3; }
+    .blob-2 { bottom: -10%; right: 10%; width: 600px; height: 600px; background: #0284c7; animation-delay: -5s; }
+    @keyframes float {
+      0% { transform: translate(0, 0) scale(1); }
+      100% { transform: translate(40px, 60px) scale(1.08); }
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 20px;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 36px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .logo-badge {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #c026d3, #7c3aed);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 800;
+      font-size: 20px;
+      box-shadow: 0 8px 24px var(--glow);
+    }
+    .brand-title {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .brand-sub {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .header-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .theme-toggle-btn {
+      padding: 8px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--card-border);
+      background: var(--card-bg);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .theme-toggle-btn:hover {
+      border-color: var(--primary);
+    }
+
+    /* Layout Grid */
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    /* Cards */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .card-title {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .card-desc {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+
+    /* Form Fields */
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 6px;
+    }
+    .input {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--card-border);
+      background: var(--code-bg);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--glow);
+    }
+
+    /* Pill Tabs */
+    .pill-tabs {
+      display: flex;
+      gap: 6px;
+      background: var(--code-bg);
+      border: 1px solid var(--card-border);
+      padding: 4px;
+      border-radius: 14px;
+      margin-bottom: 16px;
+    }
+    .pill-tab {
+      flex: 1;
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s;
+    }
+    .pill-tab.active {
+      background: var(--primary);
+      color: white;
+      box-shadow: 0 4px 12px var(--glow);
+    }
+
+    /* Action Buttons */
+    .btn-primary {
+      width: 100%;
+      padding: 14px 20px;
+      border-radius: 14px;
+      border: none;
+      background: linear-gradient(135deg, #c026d3, #a21caf);
+      color: white;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 10px 25px var(--glow);
+      transition: all 0.2s;
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #d946ef, #c026d3);
+      transform: translateY(-1px);
+      box-shadow: 0 14px 30px var(--glow);
+    }
+    .btn-primary:active { transform: translateY(0); }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .btn-secondary {
+      flex: 1;
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--card-border);
+      background: rgba(148, 163, 184, 0.08);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+    .btn-secondary:hover {
+      background: rgba(148, 163, 184, 0.16);
+      border-color: var(--text-muted);
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .badge-idle { background: rgba(148, 163, 184, 0.15); color: var(--text-muted); }
+    .badge-running { background: rgba(56, 189, 248, 0.15); color: var(--accent); }
+    .badge-success { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+    .badge-error { background: rgba(244, 63, 94, 0.15); color: var(--danger); }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .badge-running .status-dot { animation: pulse 1s infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    /* Code Viewers */
+    .code-box {
+      background: var(--code-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 14px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--text);
+      overflow-x: auto;
+      max-height: 260px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.6;
+    }
+
+    /* Log Stream */
+    .log-stream {
+      background: var(--code-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      height: 240px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .log-entry {
+      display: flex;
+      gap: 8px;
+      line-height: 1.4;
+    }
+    .log-time { color: var(--text-muted); flex-shrink: 0; }
+    .log-type { font-weight: 600; text-transform: uppercase; font-size: 10px; padding: 1px 5px; border-radius: 4px; }
+    .log-type-info { background: rgba(56, 189, 248, 0.15); color: var(--accent); }
+    .log-type-success { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+    .log-type-warn { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
+    .log-type-error { background: rgba(244, 63, 94, 0.15); color: var(--danger); }
+    .log-msg { color: var(--text); word-break: break-all; }
+
+    /* Account card preview */
+    .user-profile-bar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px;
+      border-radius: 14px;
+      background: var(--code-bg);
+      border: 1px solid var(--card-border);
+      margin-top: 14px;
+    }
+    .user-avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      color: white;
+      font-weight: 700;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .user-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .user-meta { min-width: 0; flex: 1; }
+    .user-name { font-weight: 700; font-size: 14px; }
+    .user-email { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  </style>
+</head>
+<body data-theme="dark">
+
+  <div class="ambient-bg">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+  </div>
+
+  <div class="container">
+    <header>
+      <div class="logo-badge">
+        <div class="logo-icon">Z</div>
+        <div>
+          <div class="brand-title">Zenuxs OAuth Tester</div>
+          <div class="brand-sub">In-UI Bottom Sheet Embedded Mode & Multi-Account Test Bench</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="themeToggle" class="theme-toggle-btn">
+          <span id="themeIcon">☀️</span>
+          <span id="themeLabel">Light Mode</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- Left Column: Controls & Launch -->
+      <div style="display:flex; flex-direction:column; gap:24px;">
+        <div class="card">
+          <div class="card-title">
+            <span>OAuth Configuration</span>
+            <span id="flowStatus" class="badge badge-idle">
+              <span class="status-dot"></span>
+              <span id="flowStatusText">Ready</span>
+            </span>
+          </div>
+          <div class="card-desc">
+            Configure authorization parameters. Mode <code style="color:var(--primary); font-weight:700;">inui</code> opens a seamless bottom sheet inside the current window without full-page redirect.
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Flow Mode</label>
+            <div class="pill-tabs" id="modeTabs">
+              <button class="pill-tab active" data-mode="inui">inui (Bottom Sheet)</button>
+              <button class="pill-tab" data-mode="popup">popup</button>
+              <button class="pill-tab" data-mode="redirect">redirect</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Client ID</label>
+            <input id="clientId" class="input" value="d5695548c45c3ae5" placeholder="Your OAuth client ID" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Client Secret (Backend / Confidential Only)</label>
+            <input id="clientSecret" class="input" type="password" placeholder="Optional non-public secret (test bench)" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Auth Server URL</label>
+            <input id="authServer" class="input" value="https://api.auth.zenuxs.in" placeholder="https://api.auth.zenuxs.in" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Requested Scopes</label>
+            <input id="scopes" class="input" value="openid profile email" placeholder="openid profile email" />
+          </div>
+
+          <button id="launchBtn" class="btn-primary">
+            <span>⚡ Launch In-UI Sign In</span>
+          </button>
+
+          <div class="btn-row">
+            <button id="refreshBtn" class="btn-secondary">🔄 Refresh Token</button>
+            <button id="userInfoBtn" class="btn-secondary">👤 Get User Info</button>
+            <button id="clearBtn" class="btn-secondary">🧹 Clear Session</button>
+          </div>
+        </div>
+
+        <!-- User Profile Preview Card -->
+        <div class="card" id="userCard" style="display:none;">
+          <div class="card-title">
+            <span>Authenticated User</span>
+            <span class="badge badge-success">✓ Active Session</span>
+          </div>
+          <div class="user-profile-bar">
+            <div id="userAvatar" class="user-avatar">Z</div>
+            <div class="user-meta">
+              <div id="userName" class="user-name">User Name</div>
+              <div id="userEmail" class="user-email">user@zenuxs.in</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Live Inspect & Console -->
+      <div style="display:flex; flex-direction:column; gap:24px;">
+        <!-- Live Tokens Display -->
+        <div class="card">
+          <div class="card-title">
+            <span>Token Payload Inspector</span>
+            <button id="copyTokenBtn" class="btn-secondary" style="padding:4px 10px; font-size:11px;">Copy</button>
+          </div>
+          <div class="card-desc">Decoded authorization tokens and claims from token endpoint:</div>
+          <div id="tokenDisplay" class="code-box">// No active tokens yet. Click "Launch In-UI Sign In" to authenticate.</div>
+        </div>
+
+        <!-- Real-Time Event Console -->
+        <div class="card">
+          <div class="card-title">
+            <span>Live SDK Events</span>
+            <button id="clearLogsBtn" class="btn-secondary" style="padding:4px 10px; font-size:11px;">Clear Log</button>
+          </div>
+          <div class="card-desc">Real-time lifecycle hooks received from ZenuxOAuth client:</div>
+          <div id="logStream" class="log-stream">
+            <div class="log-entry">
+              <span class="log-time">[Init]</span>
+              <span class="log-type log-type-info">INFO</span>
+              <span class="log-msg">ZenuxOAuth test bench loaded. Ready for In-UI testing.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Load bundled ZenuxOAuth script -->
+  <script src="./dist/zenux-oauth.js"></script>
+
+  <script>
+    // State & Elements
+    let currentMode = 'inui';
+    let oauthInstance = null;
+
+    const themeToggle = document.getElementById('themeToggle');
+    const themeIcon = document.getElementById('themeIcon');
+    const themeLabel = document.getElementById('themeLabel');
+    const modeTabs = document.getElementById('modeTabs');
+    const clientIdInput = document.getElementById('clientId');
+    const clientSecretInput = document.getElementById('clientSecret');
+    const authServerInput = document.getElementById('authServer');
+    const scopesInput = document.getElementById('scopes');
+    const launchBtn = document.getElementById('launchBtn');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const userInfoBtn = document.getElementById('userInfoBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const tokenDisplay = document.getElementById('tokenDisplay');
+    const logStream = document.getElementById('logStream');
+    const userCard = document.getElementById('userCard');
+    const userAvatar = document.getElementById('userAvatar');
+    const userName = document.getElementById('userName');
+    const userEmail = document.getElementById('userEmail');
+    const flowStatus = document.getElementById('flowStatus');
+    const flowStatusText = document.getElementById('flowStatusText');
+
+    // Theme Switcher
+    themeToggle.addEventListener('click', () => {
+      const current = document.body.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.body.setAttribute('data-theme', next);
+      themeIcon.textContent = next === 'dark' ? '☀️' : '🌙';
+      themeLabel.textContent = next === 'dark' ? 'Light Mode' : 'Dark Mode';
+      addLog('info', `Switched theme to ${next}`);
+    });
+
+    // Mode Tabs
+    modeTabs.querySelectorAll('.pill-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        modeTabs.querySelectorAll('.pill-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        currentMode = tab.getAttribute('data-mode');
+        launchBtn.innerHTML = `<span>⚡ Launch ${tab.textContent}</span>`;
+        addLog('info', `Selected mode: ${currentMode}`);
+      });
+    });
+
+    // Logging helper
+    function addLog(type, message) {
+      const time = new Date().toLocaleTimeString();
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.innerHTML = `
+        <span class="log-time">[${time}]</span>
+        <span class="log-type log-type-${type}">${type}</span>
+        <span class="log-msg">${typeof message === 'object' ? JSON.stringify(message) : message}</span>
+      `;
+      logStream.appendChild(entry);
+      logStream.scrollTop = logStream.scrollHeight;
+    }
+
+    function setStatus(type, text) {
+      flowStatus.className = `badge badge-${type}`;
+      flowStatusText.textContent = text;
+    }
+
+    // Initialize or get client instance
+    function getOAuth() {
+      const clientId = clientIdInput.value.trim();
+      const clientSecret = clientSecretInput.value.trim() || undefined;
+      const authServer = authServerInput.value.trim();
+      const scopes = scopesInput.value.trim();
+      const theme = document.body.getAttribute('data-theme');
+
+      oauthInstance = new ZenuxOAuth({
+        clientId,
+        clientSecret,
+        authServer,
+        scopes,
+        mode: currentMode,
+        theme,
+        debug: true
+      });
+
+      oauthInstance.on('loginRequest', (data) => {
+        setStatus('running', 'Authorizing...');
+        addLog('info', `Authorization initiated for state: ${data.state?.slice(0, 8)}...`);
+      });
+
+      oauthInstance.on('login', (tokens) => {
+        setStatus('success', 'Logged In');
+        addLog('success', 'Authentication successful! Tokens acquired.');
+        displayTokens(tokens);
+        fetchUserInfo();
+      });
+
+      oauthInstance.on('tokenRefresh', (tokens) => {
+        setStatus('success', 'Tokens Refreshed');
+        addLog('success', 'Tokens refreshed successfully.');
+        displayTokens(tokens);
+      });
+
+      oauthInstance.on('error', (err) => {
+        setStatus('error', err.code || 'Error');
+        addLog('error', `${err.code}: ${err.message}`);
+      });
+
+      return oauthInstance;
+    }
+
+    function displayTokens(tokens) {
+      tokenDisplay.textContent = JSON.stringify(tokens, null, 2);
+    }
+
+    async function fetchUserInfo() {
+      if (!oauthInstance || !oauthInstance.isAuthenticated()) return;
+      try {
+        const user = await oauthInstance.getUserInfo();
+        addLog('info', `User info received: ${user.name || user.email || user.sub}`);
+        userCard.style.display = 'block';
+        userName.textContent = user.name || user.preferred_username || 'Authenticated User';
+        userEmail.textContent = user.email || user.phone || `Sub: ${user.sub}`;
+        if (user.picture || user.avatar) {
+          userAvatar.innerHTML = `<img src="${user.picture || user.avatar}" alt="" />`;
+        } else {
+          userAvatar.textContent = (userName.textContent.charAt(0) || 'U').toUpperCase();
+        }
+      } catch (err) {
+        addLog('warn', `UserInfo notice: ${err.message}`);
+      }
+    }
+
+    // Launch Button
+    launchBtn.addEventListener('click', async () => {
+      try {
+        const oauth = getOAuth();
+        setStatus('running', 'Opening flow...');
+        addLog('info', `Starting login with mode: ${currentMode}`);
+        const result = await oauth.login({ mode: currentMode });
+        if (result && result.access_token) {
+          displayTokens(result);
+        }
+      } catch (err) {
+        setStatus('error', err.code || 'Failed');
+        addLog('error', err.message || 'Flow failed');
+      }
+    });
+
+    // Refresh Button
+    refreshBtn.addEventListener('click', async () => {
+      if (!oauthInstance) oauthInstance = getOAuth();
+      try {
+        setStatus('running', 'Refreshing...');
+        const newTokens = await oauthInstance.refreshTokens();
+        displayTokens(newTokens);
+      } catch (err) {
+        setStatus('error', 'Refresh Failed');
+        addLog('error', `Refresh error: ${err.message}`);
+      }
+    });
+
+    // UserInfo Button
+    userInfoBtn.addEventListener('click', fetchUserInfo);
+
+    // Clear Session
+    clearBtn.addEventListener('click', () => {
+      if (oauthInstance) {
+        oauthInstance.clearTokens();
+        oauthInstance.storage.clear();
+      }
+      tokenDisplay.textContent = '// Session cleared.';
+      userCard.style.display = 'none';
+      setStatus('idle', 'Ready');
+      addLog('info', 'Local session and stored tokens cleared.');
+    });
+
+    // Copy Tokens
+    document.getElementById('copyTokenBtn').addEventListener('click', () => {
+      navigator.clipboard.writeText(tokenDisplay.textContent);
+      addLog('info', 'Token JSON copied to clipboard.');
+    });
+
+    // Clear Logs
+    document.getElementById('clearLogsBtn').addEventListener('click', () => {
+      logStream.innerHTML = '';
+      addLog('info', 'Logs cleared.');
+    });
+
+    // Auto-init on page load in case of callback return
+    window.addEventListener('load', async () => {
+      const oauth = getOAuth();
+      try {
+        await oauth.init();
+        if (oauth.isAuthenticated()) {
+          setStatus('success', 'Logged In');
+          displayTokens(oauth.getTokens());
+          fetchUserInfo();
+        }
+      } catch (e) {
+        addLog('warn', `Init: ${e.message}`);
+      }
+    });
+  </script>
+</body>
+</html>

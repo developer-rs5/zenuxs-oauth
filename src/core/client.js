@@ -30,11 +30,14 @@ export class OAuthClient {
       throw new InvalidConfigError(`Invalid configuration: ${errors.join(', ')}`);
     }
     
+    const authServer = config.authServer
+      ? (config.authServer.endsWith('/') ? config.authServer.slice(0, -1) : config.authServer)
+      : 'https://api.auth.zenuxs.in';
+
     return {
       clientId: config.clientId,
-      authServer: config.authServer.endsWith('/') 
-        ? config.authServer.slice(0, -1) 
-        : config.authServer,
+      clientSecret: config.clientSecret || config.client_secret || null,
+      authServer,
       redirectUri: config.redirectUri,
       scopes: config.scopes || 'openid profile email',
       authorizeEndpoint: config.authorizeEndpoint || '/oauth/authorize',
@@ -48,7 +51,7 @@ export class OAuthClient {
       extraAuthParams: config.extraAuthParams || {},
       extraTokenParams: config.extraTokenParams || {},
       ...config,
-      authServer: 'https://api.auth.zenuxs.in'
+      authServer
     };
   }
 
@@ -128,6 +131,11 @@ export class OAuthClient {
       ...extraParams
     });
 
+    const clientSecret = options.clientSecret || options.client_secret || this.config.clientSecret;
+    if (clientSecret) {
+      body.set('client_secret', clientSecret);
+    }
+
     if (this.config.usePKCE && codeVerifier) {
       body.append('code_verifier', codeVerifier);
     }
@@ -160,6 +168,11 @@ export class OAuthClient {
       ...extraParams
     });
 
+    const clientSecret = options.clientSecret || options.client_secret || this.config.clientSecret;
+    if (clientSecret) {
+      body.set('client_secret', clientSecret);
+    }
+
     return {
       url: tokenUrl,
       method: 'POST',
@@ -185,6 +198,11 @@ export class OAuthClient {
       client_id: this.config.clientId,
       ...extraParams
     });
+
+    const clientSecret = options.clientSecret || options.client_secret || this.config.clientSecret;
+    if (clientSecret) {
+      body.set('client_secret', clientSecret);
+    }
 
     return {
       url: revokeUrl,

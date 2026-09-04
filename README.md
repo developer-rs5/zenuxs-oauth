@@ -142,9 +142,9 @@ await oauth.login({
 });
 ```
 
-### Node.js, same route
+### Node.js, same route (with non-public clientSecret)
 
-The same route can start login and finish the callback:
+For confidential server-side clients, pass `clientSecret` (kept secure on your backend, never exposed in browsers):
 
 ```js
 const express = require('express');
@@ -159,8 +159,10 @@ app.use(session({
   saveUninitialized: false
 }));
 
+// Confidential backend client: uses both clientId and non-public clientSecret
 const oauth = new ZenuxOAuth({
-  clientId: process.env.ZENUX_CLIENT_ID
+  clientId: process.env.ZENUX_CLIENT_ID,
+  clientSecret: process.env.ZENUX_CLIENT_SECRET
 });
 
 app.get('/login', async (req, res, next) => {
@@ -187,6 +189,7 @@ app.get('/login', async (req, res, next) => {
 ```js
 const oauth = new ZenuxOAuth({
   clientId: process.env.ZENUX_CLIENT_ID,
+  clientSecret: process.env.ZENUX_CLIENT_SECRET, // Non-public client secret
   redirectUri: 'https://your-app.com/auth/callback'
 });
 
@@ -200,6 +203,19 @@ app.get('/auth/callback', async (req, res) => {
   res.json(tokens);
 });
 ```
+
+## Public vs Confidential (Non-Public) Clients
+
+- **Public Clients (Browser SPAs, Mobile Apps)**:
+  - Run in environments where credentials cannot be kept confidential.
+  - Setup: Only provide `clientId`.
+  - Security: Uses OAuth 2.0 PKCE (S256 challenge & code verifier) automatically.
+  - **Never** expose `clientSecret` in frontend client code.
+
+- **Confidential / Non-Public Clients (Node.js, Express, Backends)**:
+  - Run on secure servers where secrets can be protected via environment variables.
+  - Setup: Provide both `clientId` and `clientSecret`.
+  - Security: `clientSecret` is automatically included in backend token exchanges, refreshes, revocations, and introspection.
 
 ## Default Behavior
 
@@ -218,11 +234,12 @@ app.get('/auth/callback', async (req, res) => {
 
 ## Configuration
 
-Only `clientId` is required.
+Only `clientId` is required for public clients; confidential backend clients also supply `clientSecret`.
 
 ```js
 const oauth = new ZenuxOAuth({
   clientId: 'your-client-id',
+  clientSecret: 'your-non-public-client-secret', // backend only!
   redirectUri: 'https://your-app.com/login',
   scopes: 'openid profile email',
   mode: 'ui',
@@ -246,9 +263,6 @@ const oauth = new ZenuxOAuth({
   uiCloseConfirm: true,
   extraAuthParams: {
     prompt: 'login'
-  },
-  extraTokenParams: {
-    client_secret: 'only-for-confidential-server-clients'
   }
 });
 ```
@@ -257,9 +271,10 @@ const oauth = new ZenuxOAuth({
 
 | Option | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `clientId` | yes | - | The only required option |
+| `clientId` | yes | - | OAuth Application Client ID |
+| `clientSecret` | no (required for non-public backend) | `null` | Confidential secret for backend token exchange. Keep secret! |
 | `redirectUri` | no | current page in browser | Useful for dedicated callback routes |
-| `mode` | no | environment default | Shortcut for default flow |
+| `mode` | no | environment default | `ui` (or `inui`), `popup`, `redirect`, `manual` |
 | `frontendMode` | no | `ui` | Browser default |
 | `backendMode` | no | `redirect` | Server default |
 | `theme` | no | `auto` | Embedded UI theme: `auto`, `light`, or `dark` |

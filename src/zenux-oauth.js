@@ -491,6 +491,11 @@ class ZenuxOAuth {
             throw new ZenuxOAuthError('clientId is required', 'INVALID_CONFIG');
         }
 
+        const clientSecret = config.clientSecret || config.client_secret || null;
+        if (isBrowser && clientSecret) {
+            console.warn('[ZenuxsOAuth] Security Warning: clientSecret is configured in a public browser environment. Confidential non-public client secrets should only be used on secure backend servers.');
+        }
+
         const popupWidth = Number.isFinite(Number(config.popupWidth)) ? Number(config.popupWidth) : 540;
         const popupHeight = Number.isFinite(Number(config.popupHeight)) ? Number(config.popupHeight) : 720;
         const uiWidth = Number.isFinite(Number(config.uiWidth)) ? Number(config.uiWidth) : 460;
@@ -498,6 +503,7 @@ class ZenuxOAuth {
 
         return {
             clientId,
+            clientSecret,
             authServer: this.normalizeAuthServer(config.authServer || DEFAULT_AUTH_SERVER),
             redirectUri: config.redirectUri || config.redirectURL || config.redirectUrl || null,
             scopes: config.scopes || config.scope || DEFAULT_SCOPE,
@@ -1648,6 +1654,11 @@ class ZenuxOAuth {
         body.set('redirect_uri', redirectUri);
         body.set('client_id', this.config.clientId);
 
+        const clientSecret = options.clientSecret || options.client_secret || this.config.clientSecret;
+        if (clientSecret) {
+            body.set('client_secret', clientSecret);
+        }
+
         const codeVerifier = options.codeVerifier || this.storage.get('code_verifier');
         if (this.config.usePKCE && codeVerifier) {
             body.set('code_verifier', codeVerifier);
@@ -1854,7 +1865,16 @@ class ZenuxOAuth {
 
         let _resolvedFrameUrl = authData.url;
         const _onFrameMessage = (event) => {
-            if (!event.origin.includes('zenuxs.in')) return;
+            let isAllowed = false;
+            if (event.origin && event.origin.includes('zenuxs.in')) isAllowed = true;
+            try {
+                const authOrigin = new URL(this.config.authServer).origin;
+                if (event.origin === authOrigin) isAllowed = true;
+                const eventUrl = new URL(event.origin);
+                if (eventUrl.hostname === 'localhost' || eventUrl.hostname === '127.0.0.1') isAllowed = true;
+            } catch (e) {}
+            if (!isAllowed) return;
+
             if (event.data?.type === 'zenux:navigate' && event.data.url) {
                 _resolvedFrameUrl = event.data.url;
                 this._addDebugEntry('ui-nav', `postMessage URL update: ${_resolvedFrameUrl}`);
@@ -2663,6 +2683,11 @@ class ZenuxOAuth {
         body.set('refresh_token', tokens.refresh_token);
         body.set('client_id', this.config.clientId);
 
+        const clientSecret = options.clientSecret || options.client_secret || this.config.clientSecret;
+        if (clientSecret) {
+            body.set('client_secret', clientSecret);
+        }
+
         const extraTokenParams = {
             ...this.config.extraTokenParams,
             ...(options.extraTokenParams || options.extraParams || {})
@@ -2870,7 +2895,7 @@ class ZenuxOAuth {
         return true;
     }
 
-    async revokeToken(token, tokenType = 'access_token') {
+    async revokeToken(token, tokenType = 'access_token', options = {}) {
         if (!token) {
             throw new ZenuxOAuthError('Token is required for revocation', 'MISSING_TOKEN');
         }
@@ -2879,6 +2904,11 @@ class ZenuxOAuth {
         body.set('token', token);
         body.set('token_type_hint', tokenType);
         body.set('client_id', this.config.clientId);
+
+        const clientSecret = (options && (options.clientSecret || options.client_secret)) || this.config.clientSecret;
+        if (clientSecret) {
+            body.set('client_secret', clientSecret);
+        }
 
         const fetchFunction = await this.getFetchFunction();
         const response = await fetchFunction(`${this.config.authServer}${this.config.revokeEndpoint}`, {
