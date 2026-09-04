@@ -3652,8 +3652,22 @@ class ZenuxAuthElement extends (typeof HTMLElement !== 'undefined' ? HTMLElement
             mode: 'ui'
         });
 
+        if (typeof document !== 'undefined' && !document.getElementById('zenux-auth-tag-styles')) {
+            const s = document.createElement('style');
+            s.id = 'zenux-auth-tag-styles';
+            s.textContent = `
+                zenux-auth { display: block; overflow: hidden !important; scrollbar-width: none !important; -ms-overflow-style: none !important; }
+                zenux-auth::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+                zenux-auth iframe { scrollbar-width: none !important; -ms-overflow-style: none !important; overflow: hidden !important; }
+                zenux-auth iframe::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+            `;
+            document.head.appendChild(s);
+        }
+
         this.style.display = 'block';
         this.style.width = width.includes('%') || width.includes('px') ? width : width + 'px';
+        this.style.overflow = 'hidden';
+        this.style.scrollbarWidth = 'none';
 
         try {
             this._mountHandle = await instance.mount(this, {
