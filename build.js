@@ -270,12 +270,20 @@ declare class ZenuxOAuth {
     on(event: string, handler: Function): Function;
     off(event: string, handler?: Function): void;
     emit(event: string, payload?: any): void;
-    destroy(): void;
+    mount(targetOrSelector: string | any, options?: ZenuxOAuthLoginOptions): Promise<any>;
+    static render(targetOrSelector: string | any, configOrOptions?: ZenuxOAuthConfig & ZenuxOAuthLoginOptions): Promise<any>;
     static supportedScopes: string[];
 }
 
+declare class ZenuxAuthElement extends HTMLElement {
+    oauth?: ZenuxOAuth;
+    mount(): Promise<void>;
+    onSuccess?: (tokens: TokenResponse) => void;
+    onError?: (error: any) => void;
+}
+
 export default ZenuxOAuth;
-export { ZenuxOAuth, ZenuxOAuthError };`;
+export { ZenuxOAuth, ZenuxOAuthError, ZenuxAuthElement };`;
 
 fs.writeFileSync(
     path.join(distDir, 'zenux-oauth.d.ts'),

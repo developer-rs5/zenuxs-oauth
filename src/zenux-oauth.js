@@ -2460,6 +2460,116 @@ class ZenuxOAuth {
         });
     }
 
+    async mount(targetOrSelector, options = {}) {
+        if (!isBrowser) {
+            throw new ZenuxOAuthError('mount() is only available in browser environments', 'UNSUPPORTED_MODE');
+        }
+
+        const container = typeof targetOrSelector === 'string'
+            ? document.querySelector(targetOrSelector)
+            : targetOrSelector;
+
+        if (!container) {
+            throw new ZenuxOAuthError(`Mount target not found: ${targetOrSelector}`, 'INVALID_TARGET');
+        }
+
+        const normalizedOptions = this.normalizeOptions(options);
+        const authData = await this.getAuthorizationUrl({
+            ...normalizedOptions,
+            mode: 'ui'
+        });
+
+        const rawHeight = options.height || this.config.uiHeight || 540;
+        const heightStr = typeof rawHeight === 'number' ? `${rawHeight}px` : (rawHeight.includes('%') || rawHeight.includes('px') ? rawHeight : `${rawHeight}px`);
+        const rawWidth = options.width || '100%';
+        const widthStr = typeof rawWidth === 'number' ? `${rawWidth}px` : (rawWidth.includes('%') || rawWidth.includes('px') ? rawWidth : `${rawWidth}px`);
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'zenux-auth-mounted-wrapper';
+        wrapper.style.cssText = `
+            position: relative;
+            width: ${widthStr};
+            height: ${heightStr};
+            min-height: 480px;
+            border-radius: 16px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            background: transparent;
+        `;
+
+        const iframe = document.createElement('iframe');
+        iframe.src = authData.url;
+        iframe.title = 'Zenuxs Sign In';
+        iframe.setAttribute('allow', 'clipboard-write');
+        iframe.style.cssText = `
+            width: 100%;
+            height: 100%;
+            border: none;
+            outline: none;
+            background: transparent;
+            border-radius: 16px;
+        `;
+
+        wrapper.appendChild(iframe);
+        container.appendChild(wrapper);
+
+        let callbackStarted = false;
+        const messageHandler = async (event) => {
+            let targetUrl = null;
+            if (event.data?.type === 'zenux:navigate' && event.data.url) {
+                targetUrl = event.data.url;
+            } else if (event.data?.type === 'zenux_oauth_success' && event.data.url) {
+                targetUrl = event.data.url;
+            } else if (event.data?.type === 'zenux_oauth_error' && event.data.url) {
+                targetUrl = event.data.url;
+            }
+
+            if (targetUrl && !callbackStarted) {
+                if (targetUrl.includes('?code=') || targetUrl.includes('&code=') || targetUrl.includes('?error=')) {
+                    callbackStarted = true;
+                    try {
+                        const result = await this.handleCallback(targetUrl, { ...normalizedOptions, notifyParent: false });
+                        if (typeof options.onSuccess === 'function') {
+                            options.onSuccess(result);
+                        }
+                        if (container.dispatchEvent) {
+                            container.dispatchEvent(new CustomEvent('success', { detail: result, bubbles: true, composed: true }));
+                            container.dispatchEvent(new CustomEvent('auth-success', { detail: result, bubbles: true, composed: true }));
+                        }
+                    } catch (err) {
+                        if (typeof options.onError === 'function') {
+                            options.onError(err);
+                        }
+                        if (container.dispatchEvent) {
+                            container.dispatchEvent(new CustomEvent('error', { detail: err, bubbles: true, composed: true }));
+                        }
+                    }
+                }
+            }
+        };
+
+        window.addEventListener('message', messageHandler);
+
+        return {
+            unmount: () => {
+                window.removeEventListener('message', messageHandler);
+                wrapper.remove();
+            },
+            reload: async () => {
+                callbackStarted = false;
+                const newAuthData = await this.getAuthorizationUrl({
+                    ...normalizedOptions,
+                    mode: 'ui'
+                });
+                iframe.src = newAuthData.url;
+            },
+            iframe,
+            wrapper,
+            container
+        };
+    }
+
     waitForBrowserAuth(authData, flowOptions) {
         return new Promise((resolve, reject) => {
             let settled = false;
@@ -3395,6 +3505,104 @@ class ZenuxOAuth {
 // Attach list of supported scopes for easy reference
 ZenuxOAuth.supportedScopes = SUPPORTED_SCOPES;
 
+// Static helper to render and mount OAuth directly into a container
+ZenuxOAuth.render = function(targetOrSelector, configOrOptions = {}) {
+    const instance = new ZenuxOAuth(configOrOptions);
+    return instance.mount(targetOrSelector, configOrOptions);
+};
+
+// Web Component / Custom Element: <zenux-auth>
+class ZenuxAuthElement extends (typeof HTMLElement !== 'undefined' ? HTMLElement : Object) {
+    constructor() {
+        super();
+        this._mountHandle = null;
+    }
+
+    static get observedAttributes() {
+        return ['client-id', 'client-secret', 'redirect-uri', 'scope', 'auth-server', 'theme', 'height', 'width'];
+    }
+
+    connectedCallback() {
+        this.mount();
+    }
+
+    disconnectedCallback() {
+        if (this._mountHandle && typeof this._mountHandle.unmount === 'function') {
+            this._mountHandle.unmount();
+            this._mountHandle = null;
+        }
+    }
+
+    attributeChangedCallback(name, oldValue, newValue) {
+        if (oldValue !== newValue && this.isConnected) {
+            this.mount();
+        }
+    }
+
+    async mount() {
+        if (this._mountHandle && typeof this._mountHandle.unmount === 'function') {
+            this._mountHandle.unmount();
+            this._mountHandle = null;
+        }
+
+        const clientId = this.getAttribute('client-id') || (this.oauth && this.oauth.config.clientId);
+        if (!clientId) {
+            return;
+        }
+
+        const clientSecret = this.getAttribute('client-secret') || (this.oauth && this.oauth.config.clientSecret) || null;
+        const redirectUri = this.getAttribute('redirect-uri') || (this.oauth && this.oauth.config.redirectUri) || (typeof window !== 'undefined' ? window.location.href : '');
+        const scope = this.getAttribute('scope') || (this.oauth && this.oauth.config.scope) || 'openid profile email';
+        const authServer = this.getAttribute('auth-server') || (this.oauth && this.oauth.config.authServer) || undefined;
+        const theme = this.getAttribute('theme') || 'auto';
+        const height = this.getAttribute('height') || '540px';
+        const width = this.getAttribute('width') || '100%';
+
+        const instance = this.oauth || new ZenuxOAuth({
+            clientId,
+            clientSecret,
+            redirectUri,
+            scope,
+            authServer,
+            theme,
+            mode: 'ui'
+        });
+
+        this.style.display = 'block';
+        this.style.width = width.includes('%') || width.includes('px') ? width : width + 'px';
+
+        try {
+            this._mountHandle = await instance.mount(this, {
+                height,
+                width,
+                theme,
+                onSuccess: (tokens) => {
+                    this.dispatchEvent(new CustomEvent('success', { detail: tokens, bubbles: true, composed: true }));
+                    this.dispatchEvent(new CustomEvent('auth-success', { detail: tokens, bubbles: true, composed: true }));
+                    if (typeof this.onSuccess === 'function') {
+                        this.onSuccess(tokens);
+                    }
+                },
+                onError: (err) => {
+                    this.dispatchEvent(new CustomEvent('error', { detail: err, bubbles: true, composed: true }));
+                    if (typeof this.onError === 'function') {
+                        this.onError(err);
+                    }
+                }
+            });
+        } catch (err) {
+            this.dispatchEvent(new CustomEvent('error', { detail: err, bubbles: true, composed: true }));
+            if (typeof this.onError === 'function') {
+                this.onError(err);
+            }
+        }
+    }
+}
+
+if (typeof window !== 'undefined' && typeof customElements !== 'undefined' && !customElements.get('zenux-auth')) {
+    customElements.define('zenux-auth', ZenuxAuthElement);
+}
+
 // ==================== ZENUXS CLOUD (host + oauth proxy) ====================
 const _CLOUD_IGNORE = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.nuxt']);
 const _ENV_MASK = /^([^=]+)=.*/gm;
@@ -3558,22 +3766,32 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports.ZenuxOAuth = ZenuxOAuth;
     module.exports.ZenuxOAuthError = ZenuxOAuthError;
     module.exports.ZenuxsCloud = ZenuxsCloud;
+    module.exports.ZenuxAuthElement = typeof ZenuxAuthElement !== 'undefined' ? ZenuxAuthElement : null;
 } else if (typeof define === 'function' && define.amd) {
     define([], function () {
-        return { ZenuxOAuth, ZenuxOAuthError, ZenuxsCloud };
+        return { ZenuxOAuth, ZenuxOAuthError, ZenuxsCloud, ZenuxAuthElement: typeof ZenuxAuthElement !== 'undefined' ? ZenuxAuthElement : null };
     });
 } else if (typeof window !== 'undefined') {
     window.ZenuxOAuth = ZenuxOAuth;
     window.ZenuxOAuthError = ZenuxOAuthError;
     window.ZenuxsCloud = ZenuxsCloud;
+    if (typeof ZenuxAuthElement !== 'undefined') {
+        window.ZenuxAuthElement = ZenuxAuthElement;
+    }
 } else if (typeof global !== 'undefined') {
     global.ZenuxOAuth = ZenuxOAuth;
     global.ZenuxOAuthError = ZenuxOAuthError;
     global.ZenuxsCloud = ZenuxsCloud;
+    if (typeof ZenuxAuthElement !== 'undefined') {
+        global.ZenuxAuthElement = ZenuxAuthElement;
+    }
 }
 
 if (typeof exports !== 'undefined') {
     exports.ZenuxOAuth = ZenuxOAuth;
     exports.ZenuxOAuthError = ZenuxOAuthError;
     exports.ZenuxsCloud = ZenuxsCloud;
+    if (typeof ZenuxAuthElement !== 'undefined') {
+        exports.ZenuxAuthElement = ZenuxAuthElement;
+    }
 }

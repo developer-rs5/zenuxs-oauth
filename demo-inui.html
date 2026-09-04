@@ -427,6 +427,7 @@
             <label class="form-label">Flow Mode</label>
             <div class="pill-tabs" id="modeTabs">
               <button class="pill-tab active" data-mode="inui">inui (Bottom Sheet)</button>
+              <button class="pill-tab" data-mode="tag">&lt;zenux-auth&gt; Tag</button>
               <button class="pill-tab" data-mode="popup">popup</button>
               <button class="pill-tab" data-mode="redirect">redirect</button>
             </div>
@@ -475,6 +476,27 @@
               <div id="userName" class="user-name">User Name</div>
               <div id="userEmail" class="user-email">user@zenuxs.in</div>
             </div>
+          </div>
+        </div>
+
+        <!-- Component-Based In-UI Tag Section -->
+        <div class="card" id="tagCard">
+          <div class="card-title">
+            <span>Embedded &lt;zenux-auth&gt; Tag Component</span>
+            <span class="badge badge-success">Persistent In-UI</span>
+          </div>
+          <div class="card-desc">
+            Embedded directly with <code>&lt;zenux-auth client-id="..."&gt;&lt;/zenux-auth&gt;</code>. It always remains in the webpage UI as a native, continuous part of it:
+          </div>
+          <div style="margin-top:14px; border-radius:18px; border:1px solid var(--card-border); background:rgba(3, 7, 18, 0.4); padding:6px; min-height:540px;">
+            <zenux-auth
+              id="demoZenuxAuthTag"
+              client-id="da19b9681f660014"
+              redirect-uri="http://localhost:3000/demo-inui.html"
+              scope="openid profile email"
+              theme="dark"
+              height="540px"
+            ></zenux-auth>
           </div>
         </div>
       </div>
@@ -645,8 +667,37 @@
       }
     }
 
+    // Tag component event listeners
+    const demoTag = document.getElementById('demoZenuxAuthTag');
+    if (demoTag) {
+      demoTag.addEventListener('success', (e) => {
+        setStatus('success', 'Logged In via <zenux-auth>');
+        addLog('success', 'Native <zenux-auth> tag completed authentication successfully!');
+        displayTokens(e.detail);
+        if (!oauthInstance) oauthInstance = getOAuth();
+        fetchUserInfo();
+      });
+      demoTag.addEventListener('error', (e) => {
+        setStatus('error', 'Auth Error');
+        addLog('error', `Native <zenux-auth> error: ${e.detail?.message || JSON.stringify(e.detail)}`);
+      });
+    }
+
     // Launch Button
     launchBtn.addEventListener('click', async () => {
+      if (currentMode === 'tag') {
+        const tag = document.getElementById('demoZenuxAuthTag');
+        if (tag) {
+          tag.setAttribute('client-id', clientIdInput.value.trim());
+          tag.setAttribute('scope', scopesInput.value.trim());
+          tag.setAttribute('auth-server', authServerInput.value.trim());
+          tag.mount();
+          tag.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          setStatus('running', 'Tag active in UI');
+          addLog('info', 'Refreshed & focused <zenux-auth> component in UI.');
+        }
+        return;
+      }
       try {
         const oauth = getOAuth();
         setStatus('running', 'Opening flow...');
