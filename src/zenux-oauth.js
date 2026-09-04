@@ -502,6 +502,7 @@ class ZenuxOAuth {
         const uiHeight = Number.isFinite(Number(config.uiHeight)) ? Number(config.uiHeight) : 720;
 
         return {
+            ...config,
             clientId,
             clientSecret,
             authServer: this.normalizeAuthServer(config.authServer || DEFAULT_AUTH_SERVER),
@@ -548,8 +549,7 @@ class ZenuxOAuth {
             disableOriginFallback: config.disableOriginFallback === true,
             ssoEnabled: config.ssoEnabled !== false,
             webUrl: config.webUrl || null,
-            ssoUrl: config.ssoUrl || null,
-            ...config
+            ssoUrl: config.ssoUrl || null
         };
     }
 
@@ -3553,7 +3553,7 @@ class ZenuxAuthElement extends (typeof HTMLElement !== 'undefined' ? HTMLElement
         const clientSecret = this.getAttribute('client-secret') || (this.oauth && this.oauth.config.clientSecret) || null;
         const redirectUri = this.getAttribute('redirect-uri') || (this.oauth && this.oauth.config.redirectUri) || (typeof window !== 'undefined' ? window.location.href : '');
         const scope = this.getAttribute('scope') || (this.oauth && this.oauth.config.scope) || 'openid profile email';
-        const authServer = this.getAttribute('auth-server') || (this.oauth && this.oauth.config.authServer) || undefined;
+        const authServer = this.getAttribute('auth-server') || (this.oauth && this.oauth.config.authServer) || DEFAULT_AUTH_SERVER;
         const theme = this.getAttribute('theme') || 'auto';
         const height = this.getAttribute('height') || '540px';
         const width = this.getAttribute('width') || '100%';
