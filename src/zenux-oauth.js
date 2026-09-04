@@ -1875,8 +1875,17 @@ class ZenuxOAuth {
             } catch (e) {}
             if (!isAllowed) return;
 
+            let targetUrl = null;
             if (event.data?.type === 'zenux:navigate' && event.data.url) {
-                _resolvedFrameUrl = event.data.url;
+                targetUrl = event.data.url;
+            } else if (event.data?.type === 'zenux_oauth_success' && event.data.url) {
+                targetUrl = event.data.url;
+            } else if (event.data?.type === 'zenux_oauth_error' && event.data.url) {
+                targetUrl = event.data.url;
+            }
+
+            if (targetUrl) {
+                _resolvedFrameUrl = targetUrl;
                 this._addDebugEntry('ui-nav', `postMessage URL update: ${_resolvedFrameUrl}`);
                 
                 // Intercept and handle callback directly in parent to bypass Chromium Private Network Access (PNA) blocks
