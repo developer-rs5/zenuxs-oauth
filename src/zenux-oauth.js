@@ -2484,6 +2484,11 @@ class ZenuxOAuth {
         const rawWidth = options.width || '100%';
         const widthStr = typeof rawWidth === 'number' ? `${rawWidth}px` : (rawWidth.includes('%') || rawWidth.includes('px') ? rawWidth : `${rawWidth}px`);
 
+        const existing = container.querySelector ? container.querySelector('.zenux-auth-mounted-wrapper') : null;
+        if (existing) {
+            existing.remove();
+        }
+
         const wrapper = document.createElement('div');
         wrapper.className = 'zenux-auth-mounted-wrapper';
         wrapper.style.cssText = `
