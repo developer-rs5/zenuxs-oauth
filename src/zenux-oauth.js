@@ -2493,19 +2493,19 @@ class ZenuxOAuth {
         const rawWidth = options.width || '100%';
         const widthStr = typeof rawWidth === 'number' ? `${rawWidth}px` : (rawWidth.includes('%') || rawWidth.includes('px') ? rawWidth : `${rawWidth}px`);
 
-        const existing = container.querySelector ? container.querySelector('.zenux-auth-mounted-wrapper') : null;
+        const existing = container.querySelector ? container.querySelector('.zenuxs-auth-mounted-wrapper') : null;
         if (existing) {
             existing.remove();
         }
 
-        const autoRedirect = options.autoRedirect === true || options.autoRedirect === 'true' || !!options.redirectUrl;
-        const redirectTarget = options.redirectUrl || options.redirectUri || this.config.redirectUri;
+        const autoRedirect = options.autoRedirect !== false && options.autoRedirect !== 'false';
+        const redirectTarget = options.redirectUrl || options.redirectUri || this.config.redirectUri || '/';
         const redirectDelay = options.redirectDelay !== undefined && options.redirectDelay !== null
             ? (Number(options.redirectDelay) <= 10 && Number(options.redirectDelay) > 0 ? Number(options.redirectDelay) * 1000 : Number(options.redirectDelay))
-            : 1500;
+            : 1000;
 
         const wrapper = document.createElement('div');
-        wrapper.className = 'zenux-auth-mounted-wrapper';
+        wrapper.className = 'zenuxs-auth-mounted-wrapper';
         wrapper.style.cssText = `
             position: relative;
             width: ${widthStr};
@@ -3559,7 +3559,7 @@ ZenuxOAuth.render = function(targetOrSelector, configOrOptions = {}) {
     return instance.mount(targetOrSelector, configOrOptions);
 };
 
-// Web Component / Custom Element: <zenux-auth>
+// Web Component / Custom Element: <zenuxs-auth> (also registered as <zenux-auth> for backward compat)
 class ZenuxAuthElement extends (typeof HTMLElement !== 'undefined' ? HTMLElement : Object) {
     constructor() {
         super();
@@ -3652,14 +3652,14 @@ class ZenuxAuthElement extends (typeof HTMLElement !== 'undefined' ? HTMLElement
             mode: 'ui'
         });
 
-        if (typeof document !== 'undefined' && !document.getElementById('zenux-auth-tag-styles')) {
+        if (typeof document !== 'undefined' && !document.getElementById('zenuxs-auth-tag-styles')) {
             const s = document.createElement('style');
-            s.id = 'zenux-auth-tag-styles';
+            s.id = 'zenuxs-auth-tag-styles';
             s.textContent = `
-                zenux-auth { display: block; overflow: hidden !important; scrollbar-width: none !important; -ms-overflow-style: none !important; }
-                zenux-auth::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
-                zenux-auth iframe { scrollbar-width: none !important; -ms-overflow-style: none !important; overflow: hidden !important; }
-                zenux-auth iframe::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+                zenuxs-auth, zenux-auth { display: block; overflow: hidden !important; scrollbar-width: none !important; -ms-overflow-style: none !important; }
+                zenuxs-auth::-webkit-scrollbar, zenux-auth::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+                zenuxs-auth iframe, zenux-auth iframe { scrollbar-width: none !important; -ms-overflow-style: none !important; overflow: hidden !important; }
+                zenuxs-auth iframe::-webkit-scrollbar, zenux-auth iframe::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
             `;
             document.head.appendChild(s);
         }
@@ -3709,8 +3709,15 @@ class ZenuxAuthElement extends (typeof HTMLElement !== 'undefined' ? HTMLElement
     }
 }
 
-if (typeof window !== 'undefined' && typeof customElements !== 'undefined' && !customElements.get('zenux-auth')) {
-    customElements.define('zenux-auth', ZenuxAuthElement);
+if (typeof window !== 'undefined' && typeof customElements !== 'undefined') {
+    if (!customElements.get('zenuxs-auth')) {
+        customElements.define('zenuxs-auth', ZenuxAuthElement);
+    }
+    // Backward compatibility: also register as <zenux-auth>
+    if (!customElements.get('zenux-auth')) {
+        class ZenuxAuthElementCompat extends ZenuxAuthElement {}
+        customElements.define('zenux-auth', ZenuxAuthElementCompat);
+    }
 }
 
 // ==================== ZENUXS CLOUD (host + oauth proxy) ====================

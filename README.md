@@ -2,7 +2,7 @@
 
 Universal OAuth 2.0 + PKCE client for Zenuxs auth.
 
-It works in browsers, Node.js, React Native, and hybrid apps with one small API:
+It works in browsers, Node.js, React, Next.js, React Native, and hybrid apps with one small API:
 
 ```js
 const oauth = new ZenuxOAuth({ clientId: 'your-client-id' });
@@ -23,6 +23,7 @@ Everything else is optional.
 - Same-page callback handling works automatically
 - Manual flow is still available when you want full control
 - Built-in token refresh, user info, logout, and authenticated fetch
+- **`<zenuxs-auth>` custom element** for tag-based auth UI (works in plain HTML, React, Next.js, and any framework)
 
 ## Installation
 
@@ -33,26 +34,186 @@ npm install zenuxs-oauth
 Browser CDN:
 
 ```html
-<script src="https://unpkg.com/zenuxs-oauth@6.1.1/dist/zenux-oauth.min.js"></script>
+<script src="https://unpkg.com/zenuxs-oauth@7/dist/zenux-oauth.min.js"></script>
 ```
 
 ## Quick Start
 
-### Browser, same page, default UI mode
+### `<zenuxs-auth>` Tag (Recommended)
 
-This is the new default flow.
+The simplest way to add authentication. Drop the tag anywhere in your HTML — it renders a persistent, inline login UI:
 
-If your login page is `/login` or `/login.html`, the SDK can:
+```html
+<script src="https://unpkg.com/zenuxs-oauth@7/dist/zenux-oauth.min.js"></script>
 
-1. start OAuth from that page
-2. use the same page as the redirect URI
-3. detect `?code=...` on return
-4. finish the callback automatically
+<zenuxs-auth
+  client-id="your-client-id"
+  redirect-uri="https://your-app.com/callback"
+  scope="openid profile email"
+  theme="dark"
+  height="540px"
+></zenuxs-auth>
+
+<script>
+  document.querySelector('zenuxs-auth').addEventListener('success', (e) => {
+    console.log('Logged in!', e.detail);
+  });
+</script>
+```
+
+#### Tag Attributes
+
+| Attribute | Default | Description |
+| --- | --- | --- |
+| `client-id` | (required) | OAuth client ID |
+| `redirect-uri` | current page | OAuth redirect URI |
+| `scope` | `openid profile email` | Requested scopes |
+| `auth-server` | `https://api.auth.zenuxs.in` | Auth server URL |
+| `theme` | `auto` | `auto`, `light`, or `dark` |
+| `height` | `540px` | Height of the auth UI |
+| `width` | `100%` | Width of the auth UI |
+| `redirect-url` | `/` | Where to navigate after auth success |
+| `redirect-delay` | `1` | Seconds to wait before redirect (default 1s) |
+| `auto-redirect` | `true` | Auto redirect after success (default: true, set `false` to disable) |
+
+#### Tag Events
+
+| Event | Detail | Description |
+| --- | --- | --- |
+| `success` | `{ access_token, id_token, ... }` | Fired on successful authentication |
+| `error` | `{ message, code, ... }` | Fired on authentication error |
+| `redirect` | `{ targetUrl, delay, result }` | Fired before auto-redirect |
+
+> **Note:** `<zenux-auth>` still works as a backward-compatible alias for `<zenuxs-auth>`.
+
+---
+
+### React
+
+```jsx
+import 'zenuxs-oauth'; // registers <zenuxs-auth> custom element
+
+function LoginPage() {
+  const authRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const el = authRef.current;
+    if (!el) return;
+
+    const onSuccess = (e) => {
+      console.log('Authenticated!', e.detail);
+      // e.detail has access_token, id_token, etc.
+    };
+
+    const onError = (e) => {
+      console.error('Auth error:', e.detail);
+    };
+
+    el.addEventListener('success', onSuccess);
+    el.addEventListener('error', onError);
+    return () => {
+      el.removeEventListener('success', onSuccess);
+      el.removeEventListener('error', onError);
+    };
+  }, []);
+
+  return (
+    <zenuxs-auth
+      ref={authRef}
+      client-id="your-client-id"
+      redirect-uri="http://localhost:3000/callback"
+      scope="openid profile email"
+      theme="dark"
+      height="540px"
+    />
+  );
+}
+```
+
+### Next.js (App Router)
+
+```jsx
+'use client';
+import { useEffect, useRef } from 'react';
+
+export default function LoginPage() {
+  const authRef = useRef(null);
+
+  useEffect(() => {
+    // Dynamic import so the custom element only registers in the browser
+    import('zenuxs-oauth');
+
+    const el = authRef.current;
+    if (!el) return;
+
+    const onSuccess = (e) => {
+      console.log('Authenticated!', e.detail);
+    };
+
+    el.addEventListener('success', onSuccess);
+    return () => el.removeEventListener('success', onSuccess);
+  }, []);
+
+  return (
+    <zenuxs-auth
+      ref={authRef}
+      client-id="your-client-id"
+      redirect-uri="http://localhost:3000/callback"
+      scope="openid profile email"
+      theme="dark"
+      height="540px"
+    />
+  );
+}
+```
+
+### Next.js (Pages Router)
+
+```jsx
+import dynamic from 'next/dynamic';
+import { useEffect, useRef } from 'react';
+
+// Prevent SSR of the auth component
+function ZenuxsLogin() {
+  const authRef = useRef(null);
+
+  useEffect(() => {
+    require('zenuxs-oauth');
+
+    const el = authRef.current;
+    if (!el) return;
+
+    const onSuccess = (e) => {
+      console.log('Authenticated!', e.detail);
+    };
+
+    el.addEventListener('success', onSuccess);
+    return () => el.removeEventListener('success', onSuccess);
+  }, []);
+
+  return (
+    <zenuxs-auth
+      ref={authRef}
+      client-id="your-client-id"
+      redirect-uri="http://localhost:3000/callback"
+      scope="openid profile email"
+      theme="dark"
+      height="540px"
+    />
+  );
+}
+
+export default dynamic(() => Promise.resolve(ZenuxsLogin), { ssr: false });
+```
+
+---
+
+### Browser, JavaScript API (Default UI mode)
 
 ```html
 <button id="login">Continue with Zenuxs</button>
 
-<script src="https://unpkg.com/zenuxs-oauth@6.1.1/dist/zenux-oauth.min.js"></script>
+<script src="https://unpkg.com/zenuxs-oauth@7/dist/zenux-oauth.min.js"></script>
 <script>
 const oauth = new ZenuxOAuth({
   clientId: 'your-client-id',
@@ -232,6 +393,14 @@ app.get('/auth/callback', async (req, res) => {
 - fetch: auto-detected from `globalThis.fetch`, `node-fetch`, or `undici`
 - storage: in-memory unless you pass your own adapter
 
+### Post-auth redirect defaults (tag & mount mode)
+
+- **auto-redirect**: enabled by default (redirects to `/` after auth)
+- **redirect-delay**: 1 second
+- **redirect-url**: `/` (root path)
+
+Set `auto-redirect="false"` on the tag to disable automatic redirection.
+
 ## Configuration
 
 Only `clientId` is required for public clients; confidential backend clients also supply `clientSecret`.
@@ -285,6 +454,16 @@ const oauth = new ZenuxOAuth({
 | `uiCloseConfirm` | no | `true` | Ask for confirmation before closing the embedded sheet |
 | `debug` | no | `false` | Logs SDK internals |
 | `autoRefresh` | no | `false` | Refreshes access tokens when possible |
+
+## Redirect URI Matching
+
+The server uses **prefix-based** redirect URI matching. If you register `https://example.com/callback` as a redirect URI, all of these will be accepted:
+
+- `https://example.com/callback`
+- `https://example.com/callback/`
+- `https://example.com/callback?code=abc&state=xyz`
+
+The origin (scheme + host + port) must match exactly.
 
 ## Main Methods
 
