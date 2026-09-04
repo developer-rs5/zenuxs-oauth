@@ -2019,6 +2019,12 @@ class ZenuxOAuth {
     border: 0;
     background: ${palette.frameBackground};
     transition: opacity 180ms ease, transform 180ms ease, filter 180ms ease;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    overflow: hidden;
+}
+.zo-ui-frame::-webkit-scrollbar {
+    display: none;
 }
 .zo-ui-sheet.zo-processing .zo-ui-frame {
     opacity: 0.06;
@@ -2134,6 +2140,9 @@ class ZenuxOAuth {
         frame.className = 'zo-ui-frame';
         frame.title = 'Zenux OAuth Login';
         frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-top-navigation');
+        frame.setAttribute('scrolling', 'no');
+        frame.style.scrollbarWidth = 'none';
+        frame.style.overflow = 'hidden';
         frame.src = authData.url;
         loadingLayer.className = 'zo-ui-loading is-visible';
         confirmBar.className = 'zo-ui-confirm';
@@ -2489,6 +2498,12 @@ class ZenuxOAuth {
             existing.remove();
         }
 
+        const autoRedirect = options.autoRedirect === true || options.autoRedirect === 'true' || !!options.redirectUrl;
+        const redirectTarget = options.redirectUrl || options.redirectUri || this.config.redirectUri;
+        const redirectDelay = options.redirectDelay !== undefined && options.redirectDelay !== null
+            ? (Number(options.redirectDelay) <= 10 && Number(options.redirectDelay) > 0 ? Number(options.redirectDelay) * 1000 : Number(options.redirectDelay))
+            : 1500;
+
         const wrapper = document.createElement('div');
         wrapper.className = 'zenux-auth-mounted-wrapper';
         wrapper.style.cssText = `
@@ -2501,12 +2516,15 @@ class ZenuxOAuth {
             display: flex;
             flex-direction: column;
             background: transparent;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
         `;
 
         const iframe = document.createElement('iframe');
         iframe.src = authData.url;
         iframe.title = 'Zenuxs Sign In';
         iframe.setAttribute('allow', 'clipboard-write');
+        iframe.setAttribute('scrolling', 'no');
         iframe.style.cssText = `
             width: 100%;
             height: 100%;
@@ -2514,6 +2532,9 @@ class ZenuxOAuth {
             outline: none;
             background: transparent;
             border-radius: 16px;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+            overflow: hidden;
         `;
 
         wrapper.appendChild(iframe);
@@ -2541,6 +2562,20 @@ class ZenuxOAuth {
                         if (container.dispatchEvent) {
                             container.dispatchEvent(new CustomEvent('success', { detail: result, bubbles: true, composed: true }));
                             container.dispatchEvent(new CustomEvent('auth-success', { detail: result, bubbles: true, composed: true }));
+                        }
+
+                        if (autoRedirect && redirectTarget) {
+                            const redirectInfo = { targetUrl: redirectTarget, delay: redirectDelay, result };
+                            if (typeof options.onRedirect === 'function') {
+                                options.onRedirect(redirectInfo);
+                            }
+                            if (container.dispatchEvent) {
+                                container.dispatchEvent(new CustomEvent('redirect', { detail: redirectInfo, bubbles: true, composed: true }));
+                                container.dispatchEvent(new CustomEvent('auth-redirect', { detail: redirectInfo, bubbles: true, composed: true }));
+                            }
+                            setTimeout(() => {
+                                window.location.assign(redirectTarget);
+                            }, redirectDelay);
                         }
                     } catch (err) {
                         if (typeof options.onError === 'function') {
@@ -3395,7 +3430,15 @@ class ZenuxOAuth {
             bar.style.pointerEvents = 'auto';
         });
 
-        bar.querySelector('#zenuxs-sso-continue').addEventListener('click', () => { window.location.href = authorizeUrl; });
+        const ssoAuthorizeUrl = authorizeUrl + '&sso=true&direct_login=true';
+
+        bar.querySelector('#zenuxs-sso-continue').addEventListener('click', (e) => {
+            const btn = e.currentTarget;
+            btn.textContent = 'Signing in...';
+            btn.style.opacity = '0.75';
+            btn.style.pointerEvents = 'none';
+            window.location.href = ssoAuthorizeUrl;
+        });
 
         bar.querySelector('#zenuxs-sso-close').addEventListener('click', () => {
             this._ssoDismissed = true;
@@ -3431,7 +3474,7 @@ class ZenuxOAuth {
             btn.addEventListener('click', () => {
                 const idx = parseInt(btn.getAttribute('data-idx'), 10);
                 const hint = this._ssoAcctHints && this._ssoAcctHints[idx] ? this._ssoAcctHints[idx] : '';
-                window.location.href = authUrl + '/oauth/authorize?client_id=' + encodeURIComponent(config.clientId) + '&redirect_uri=' + encodeURIComponent(redirectUri) + '&scope=' + encodeURIComponent(config.scopes) + (hint ? '&login_hint=' + encodeURIComponent(hint) : '');
+                window.location.href = authUrl + '/oauth/authorize?client_id=' + encodeURIComponent(config.clientId) + '&redirect_uri=' + encodeURIComponent(redirectUri) + '&scope=' + encodeURIComponent(config.scopes) + '&sso=true&direct_login=true' + (hint ? '&login_hint=' + encodeURIComponent(hint) : '');
             });
         });
 
@@ -3527,7 +3570,7 @@ class ZenuxAuthElement extends (typeof HTMLElement !== 'undefined' ? HTMLElement
     }
 
     static get observedAttributes() {
-        return ['client-id', 'client-secret', 'redirect-uri', 'scope', 'auth-server', 'theme', 'height', 'width'];
+        return ['client-id', 'client-secret', 'redirect-uri', 'scope', 'auth-server', 'theme', 'height', 'width', 'redirect-url', 'redirect-delay', 'auto-redirect'];
     }
 
     connectedCallback() {
@@ -3595,6 +3638,9 @@ class ZenuxAuthElement extends (typeof HTMLElement !== 'undefined' ? HTMLElement
         const theme = this.getAttribute('theme') || 'auto';
         const height = this.getAttribute('height') || '540px';
         const width = this.getAttribute('width') || '100%';
+        const redirectUrl = this.getAttribute('redirect-url') || (this.oauth && this.oauth.config.redirectUrl) || null;
+        const redirectDelay = this.getAttribute('redirect-delay') || (this.oauth && this.oauth.config.redirectDelay) || null;
+        const autoRedirect = this.getAttribute('auto-redirect') || (this.oauth && this.oauth.config.autoRedirect) || null;
 
         const instance = this.oauth || new ZenuxOAuth({
             clientId,
@@ -3614,11 +3660,21 @@ class ZenuxAuthElement extends (typeof HTMLElement !== 'undefined' ? HTMLElement
                 height,
                 width,
                 theme,
+                redirectUrl,
+                redirectDelay,
+                autoRedirect,
                 onSuccess: (tokens) => {
                     this.dispatchEvent(new CustomEvent('success', { detail: tokens, bubbles: true, composed: true }));
                     this.dispatchEvent(new CustomEvent('auth-success', { detail: tokens, bubbles: true, composed: true }));
                     if (typeof this.onSuccess === 'function') {
                         this.onSuccess(tokens);
+                    }
+                },
+                onRedirect: (info) => {
+                    this.dispatchEvent(new CustomEvent('redirect', { detail: info, bubbles: true, composed: true }));
+                    this.dispatchEvent(new CustomEvent('auth-redirect', { detail: info, bubbles: true, composed: true }));
+                    if (typeof this.onRedirect === 'function') {
+                        this.onRedirect(info);
                     }
                 },
                 onError: (err) => {

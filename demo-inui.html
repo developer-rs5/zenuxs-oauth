@@ -408,6 +408,15 @@
       </div>
     </header>
 
+    <!-- Post-Auth Redirect Notification Toast -->
+    <div id="redirectToast" style="display:none; margin-bottom:16px; padding:12px 18px; border-radius:12px; background:rgba(16, 185, 129, 0.15); border:1px solid rgba(16, 185, 129, 0.3); color:#34d399; font-size:13px; align-items:center; justify-content:space-between; animation:zenuxsFadeInUp 0.3s ease-out;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:16px;">🚀</span>
+        <span id="redirectToastText" style="font-weight:500;">Redirecting to destination...</span>
+      </div>
+      <button id="cancelRedirectBtn" class="btn-secondary" style="padding:4px 10px; font-size:11px; border-color:rgba(16, 185, 129, 0.4); color:#34d399;">Dismiss</button>
+    </div>
+
     <div class="grid">
       <!-- Left Column: Controls & Launch -->
       <div style="display:flex; flex-direction:column; gap:24px;">
@@ -451,6 +460,26 @@
           <div class="form-group">
             <label class="form-label">Requested Scopes</label>
             <input id="scopes" class="input" value="openid profile email" placeholder="openid profile email" />
+          </div>
+
+          <div style="border-top:1px solid var(--card-border); margin:16px 0 14px; padding-top:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <span style="font-size:12px; font-weight:600; color:var(--text-primary); text-transform:uppercase; letter-spacing:0.05em;">Post-Auth Redirect Config</span>
+              <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); cursor:pointer;">
+                <input type="checkbox" id="autoRedirectCheck" />
+                <span>Auto-Redirect</span>
+              </label>
+            </div>
+            <div style="display:grid; grid-template-columns: 2fr 1fr; gap:10px;">
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Redirect Target URL</label>
+                <input id="redirectUrlInput" class="input" value="http://localhost:3000/callback.html" placeholder="e.g. /dashboard or callback.html" />
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Delay (ms)</label>
+                <input id="redirectDelayInput" class="input" type="number" value="2000" placeholder="1500" />
+              </div>
+            </div>
           </div>
 
           <button id="launchBtn" class="btn-primary">
@@ -668,6 +697,53 @@
       }
     }
 
+    const autoRedirectCheck = document.getElementById('autoRedirectCheck');
+    const redirectUrlInput = document.getElementById('redirectUrlInput');
+    const redirectDelayInput = document.getElementById('redirectDelayInput');
+    const redirectToast = document.getElementById('redirectToast');
+    const redirectToastText = document.getElementById('redirectToastText');
+    const cancelRedirectBtn = document.getElementById('cancelRedirectBtn');
+    let activeRedirectTimer = null;
+
+    function showRedirectToast(url, delay) {
+      if (!redirectToast) return;
+      redirectToast.style.display = 'flex';
+      let remaining = Math.max(1, Math.round(delay / 1000));
+      redirectToastText.textContent = `Redirecting to ${url} in ${remaining}s...`;
+      const interval = setInterval(() => {
+        remaining -= 1;
+        if (remaining > 0) {
+          redirectToastText.textContent = `Redirecting to ${url} in ${remaining}s...`;
+        } else {
+          clearInterval(interval);
+        }
+      }, 1000);
+
+      cancelRedirectBtn.onclick = () => {
+        clearInterval(interval);
+        redirectToast.style.display = 'none';
+        addLog('warn', 'Redirect notification dismissed.');
+      };
+    }
+
+    function syncTagRedirectAttributes() {
+      const tag = document.getElementById('demoZenuxAuthTag');
+      if (!tag) return;
+      if (autoRedirectCheck && autoRedirectCheck.checked) {
+        tag.setAttribute('auto-redirect', 'true');
+        tag.setAttribute('redirect-url', redirectUrlInput.value.trim());
+        tag.setAttribute('redirect-delay', redirectDelayInput.value.trim());
+      } else {
+        tag.removeAttribute('auto-redirect');
+        tag.removeAttribute('redirect-url');
+        tag.removeAttribute('redirect-delay');
+      }
+    }
+
+    if (autoRedirectCheck) autoRedirectCheck.addEventListener('change', syncTagRedirectAttributes);
+    if (redirectUrlInput) redirectUrlInput.addEventListener('input', syncTagRedirectAttributes);
+    if (redirectDelayInput) redirectDelayInput.addEventListener('input', syncTagRedirectAttributes);
+
     // Tag component event listeners
     const demoTag = document.getElementById('demoZenuxAuthTag');
     if (demoTag) {
@@ -677,6 +753,12 @@
         displayTokens(e.detail);
         if (!oauthInstance) oauthInstance = getOAuth();
         fetchUserInfo();
+      });
+      demoTag.addEventListener('redirect', (e) => {
+        const { targetUrl, delay } = e.detail || {};
+        setStatus('running', `Redirecting in ${delay}ms...`);
+        addLog('info', `REDIRECT SCHEDULED: Redirecting to ${targetUrl} in ${delay}ms`);
+        showRedirectToast(targetUrl, delay);
       });
       demoTag.addEventListener('error', (e) => {
         setStatus('error', 'Auth Error');
@@ -692,6 +774,7 @@
           tag.setAttribute('client-id', clientIdInput.value.trim());
           tag.setAttribute('scope', scopesInput.value.trim());
           tag.setAttribute('auth-server', authServerInput.value.trim());
+          syncTagRedirectAttributes();
           tag.scrollIntoView({ behavior: 'smooth', block: 'center' });
           setStatus('running', 'Tag active in UI');
           addLog('info', 'Focused <zenux-auth> component in UI.');
@@ -702,7 +785,17 @@
         const oauth = getOAuth();
         setStatus('running', 'Opening flow...');
         addLog('info', `Starting login with mode: ${currentMode}`);
-        const result = await oauth.login({ mode: currentMode });
+        const loginOptions = {
+          mode: currentMode,
+          autoRedirect: autoRedirectCheck ? autoRedirectCheck.checked : false,
+          redirectUrl: redirectUrlInput ? redirectUrlInput.value.trim() : undefined,
+          redirectDelay: redirectDelayInput ? Number(redirectDelayInput.value.trim()) : 1500,
+          onRedirect: (info) => {
+            addLog('info', `REDIRECT SCHEDULED: Redirecting to ${info.targetUrl} in ${info.delay}ms`);
+            showRedirectToast(info.targetUrl, info.delay);
+          }
+        };
+        const result = await oauth.login(loginOptions);
         if (result && result.access_token) {
           displayTokens(result);
         }
